@@ -386,37 +386,60 @@
   currentStakeTier = null;
 }
 
-    document.getElementById('stk-confirm').addEventListener('click', async () => {
-  const amount = parseFloat(document.getElementById('stk-amount').value);
-  const tradePassword = document.getElementById('stk-trade-pwd').value;
+    document.getElementById('stk-confirm').addEventListener('click', () => {
+  const amountInput = document.getElementById('stk-amount');
+  const pwdInput = document.getElementById('stk-trade-pwd');
+  const errDiv = document.getElementById('stk-error');
+  const amount = parseFloat(amountInput.value);
+  const tradePassword = pwdInput ? pwdInput.value : '';
+
   if (!amount || amount < currentStakeTier.min) {
-    document.getElementById('stk-error').textContent = '金额不能低于最低门槛';
+    errDiv.textContent = '金额不能低于最低门槛';
     return;
   }
-  try {
-    const response = await fetch(API + '/api/stake/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ tierName: currentStakeTier.name, amount, tradePassword })
-    });
-    const res = await response.json();
+
+  // 如果未设置交易密码，引导设置
+  if (!userInfo.hasTradePwd) {
+    errDiv.innerHTML = '您还未设置交易密码，<a href="javascript:void(0)" onclick="closeStakeModal();setTradePassword()" style="color:#fbbf24;text-decoration:underline;">点击设置</a>';
+    return;
+  }
+
+  errDiv.textContent = '提交中...';
+
+  fetch(API + '/api/stake/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    body: JSON.stringify({
+      tierName: currentStakeTier.name,
+      amount: amount,
+      tradePassword: tradePassword
+    })
+  })
+  .then(r => r.json())
+  .then(res => {
     if (res.success) {
-      alert('质押成功！到期日：' + res.data.endDate);
+      alert(`质押成功！到期日：${res.data.endDate}`);
       closeStakeModal();
+      // 刷新余额和质押列表
       checkLogin();
       loadStakePage();
     } else {
-      // 特殊处理：未设置交易密码
-      if (res.message.includes('交易密码') && !userInfo.hasTradePwd && !tradePassword) {
+      // 交易密码未设置
+      if (res.message.includes('交易密码') && !userInfo.hasTradePwd) {
         closeStakeModal();
-        setTradePassword(); // 直接跳转到设置密码
+        setTradePassword();
       } else {
-        document.getElementById('stk-error').textContent = res.message;
+        errDiv.textContent = res.message;
       }
     }
-  } catch (err) {
-    document.getElementById('stk-error').textContent = '网络错误，请重试';
-  }
+  })
+  .catch(err => {
+    console.error('质押请求失败:', err);
+    errDiv.textContent = '网络错误，请稍后重试';
+  });
 });
 
     function renderMyStakesWithSign(data){
