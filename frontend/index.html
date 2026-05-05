@@ -373,30 +373,51 @@
       document.getElementById('stk-trade-pwd').value = '';
       document.getElementById('stk-balance').textContent = userInfo ? userInfo.available_balance.toFixed(2) : '0';
       document.getElementById('stk-error').textContent = '';
+        // 在 openStakeModal 的最后添加
+  if (!userInfo.hasTradePwd) {
+    document.getElementById('stk-trade-pwd').style.display = 'none';
+    document.getElementById('stk-error').innerHTML = '您还未设置交易密码，<a href="javascript:void(0)" onclick="closeStakeModal();setTradePassword()" style="color:#fbbf24;text-decoration:underline;">点击设置</a>';
+  } else {
+    document.getElementById('stk-trade-pwd').style.display = 'block';
+  }
     }
-    function closeStakeModal(){ document.getElementById('stake-modal').style.display = 'none'; }
+    function closeStakeModal(){
+  document.getElementById('stake-modal').style.display = 'none';
+  currentStakeTier = null;
+}
 
-    document.getElementById('stk-confirm').addEventListener('click', () => {
-      const amount = parseFloat(document.getElementById('stk-amount').value);
-      const tradePassword = document.getElementById('stk-trade-pwd').value;
-      if(!amount || amount < currentStakeTier.min) return document.getElementById('stk-error').textContent = '金额不能低于最低门槛';
-      fetch(API+'/api/stake/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
-        body: JSON.stringify({ tierName: currentStakeTier.name, amount, tradePassword })
-      })
-      .then(r => r.json())
-      .then(res => {
-        if(res.success){
-          alert('质押成功！到期日：'+res.data.endDate);
-          closeStakeModal();
-          checkLogin();
-          loadStakePage();
-        } else {
-          document.getElementById('stk-error').textContent = res.message;
-        }
-      });
+    document.getElementById('stk-confirm').addEventListener('click', async () => {
+  const amount = parseFloat(document.getElementById('stk-amount').value);
+  const tradePassword = document.getElementById('stk-trade-pwd').value;
+  if (!amount || amount < currentStakeTier.min) {
+    document.getElementById('stk-error').textContent = '金额不能低于最低门槛';
+    return;
+  }
+  try {
+    const response = await fetch(API + '/api/stake/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ tierName: currentStakeTier.name, amount, tradePassword })
     });
+    const res = await response.json();
+    if (res.success) {
+      alert('质押成功！到期日：' + res.data.endDate);
+      closeStakeModal();
+      checkLogin();
+      loadStakePage();
+    } else {
+      // 特殊处理：未设置交易密码
+      if (res.message.includes('交易密码') && !userInfo.hasTradePwd && !tradePassword) {
+        closeStakeModal();
+        setTradePassword(); // 直接跳转到设置密码
+      } else {
+        document.getElementById('stk-error').textContent = res.message;
+      }
+    }
+  } catch (err) {
+    document.getElementById('stk-error').textContent = '网络错误，请重试';
+  }
+});
 
     function renderMyStakesWithSign(data){
       const { currentPeriod, stakes } = data;
