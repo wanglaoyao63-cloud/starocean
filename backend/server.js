@@ -20,6 +20,14 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 let db;
 const DB_PATH = path.join(__dirname, 'starocean.db');
 
+const STAKE_TIERS = [
+    { name: 'A档(体验仓)', min: 100, max: 300, dailyRate: 0.005, lockDays: 7, limitOnce: true },
+    { name: 'B档(新手仓)', min: 500, max: 1500, dailyRate: 0.004, lockDays: 30, limitOnce: false },
+    { name: 'C档(稳健仓)', min: 3000, max: 12000, dailyRate: 0.006, lockDays: 90, limitOnce: false },
+    { name: 'D档(进阶仓)', min: 20000, max: 60000, dailyRate: 0.007, lockDays: 180, limitOnce: false },
+    { name: 'S档(尊享仓)', min: 100000, max: Infinity, dailyRate: 0.01, lockDays: 420, limitOnce: false }
+];
+
 async function initDB() {
     const SQL = await initSqlJs();
     if (fs.existsSync(DB_PATH)) {
@@ -29,32 +37,49 @@ async function initDB() {
         db = new SQL.Database();
     }
 
-    // 扩展兼容 better-sqlite3 的方法
+    // 保存 SQL.js 原始方法，避免递归
+    const originalPrepare = db.prepare.bind(db);
+    const originalExec = db.exec.bind(db);
+
+    // 扩展 run 方法
     db.run = function (sql, ...params) {
-        const stmt = this.prepare(sql);
+        const stmt = originalPrepare(sql);
         stmt.bind(params);
         if (stmt.step()) {
             const changes = this.getRowsModified();
-            const lastId = this.exec("SELECT last_insert_rowid()")[0]?.values[0]?.[0];
+            let lastInsertRowid = null;
+            try {
+                const r = originalExec("SELECT last_insert_rowid()");
+                if (r.length > 0 && r[0].values.length > 0) {
+                    lastInsertRowid = r[0].values[0][0];
+                }
+            } catch (e) { /* 非 INSERT 语句无 last_insert_rowid */ }
             stmt.reset();
             this.saveToFile(DB_PATH);
-            return { changes, lastInsertRowid: lastId };
+            return { changes, lastInsertRowid };
         }
         stmt.reset();
         return { changes: 0 };
     };
 
+    // 扩展 prepare 方法，返回兼容对象
     db.prepare = function (sql) {
-        const stmt = this.prepare(sql);
+        const stmt = originalPrepare(sql);
         return {
             run: (...params) => {
                 stmt.bind(params);
                 if (stmt.step()) {
                     const changes = db.getRowsModified();
-                    const lastId = db.exec("SELECT last_insert_rowid()")[0]?.values[0]?.[0];
+                    let lastInsertRowid = null;
+                    try {
+                        const r = originalExec("SELECT last_insert_rowid()");
+                        if (r.length > 0 && r[0].values.length > 0) {
+                            lastInsertRowid = r[0].values[0][0];
+                        }
+                    } catch (e) { }
                     stmt.reset();
                     db.saveToFile(DB_PATH);
-                    return { changes, lastInsertRowid: lastId };
+                    return { changes, lastInsertRowid };
                 }
                 stmt.reset();
                 return { changes: 0 };
@@ -81,17 +106,30 @@ async function initDB() {
         };
     };
 
+    // 扩展 exec
+    db.exec = function (sql) {
+        const result = originalExec(sql);
+        this.saveToFile(DB_PATH);
+        return result;
+    };
+
     // 创建所有表
-    db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, nickname TEXT DEFAULT '', avatar TEXT DEFAULT '', balance REAL DEFAULT 0, total_staked REAL DEFAULT 0, invite_code TEXT UNIQUE NOT NULL, inviter_id INTEGER, level TEXT DEFAULT 'normal', created_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS stakes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, tier TEXT NOT NULL, amount REAL NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, daily_rate REAL NOT NULL, status TEXT DEFAULT 'active', created_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS sign_records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, stake_id INTEGER NOT NULL, period TEXT NOT NULL, sign_date TEXT NOT NULL, claimed INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, related_id INTEGER, note TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'admin', parent_id INTEGER, created_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS welfares (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, reward_amount REAL DEFAULT 0, max_claims INTEGER DEFAULT 0, claim_count INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS welfare_claims (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, welfare_id INTEGER NOT NULL, claimed_at TEXT DEFAULT (datetime('now','localtime')))`);
-    db.run(`CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, trade_password TEXT DEFAULT '', real_name TEXT DEFAULT '', id_card TEXT DEFAULT '', real_status TEXT DEFAULT 'unverified')`);
-    db.run(`CREATE TABLE IF NOT EXISTS withdraw_addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, coin TEXT NOT NULL, address TEXT NOT NULL, label TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))`);
+    const tables = [
+        `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, nickname TEXT DEFAULT '', avatar TEXT DEFAULT '', balance REAL DEFAULT 0, total_staked REAL DEFAULT 0, invite_code TEXT UNIQUE NOT NULL, inviter_id INTEGER, level TEXT DEFAULT 'normal', created_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS stakes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, tier TEXT NOT NULL, amount REAL NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, daily_rate REAL NOT NULL, status TEXT DEFAULT 'active', created_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS sign_records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, stake_id INTEGER NOT NULL, period TEXT NOT NULL, sign_date TEXT NOT NULL, claimed INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, related_id INTEGER, note TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'admin', parent_id INTEGER, created_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS welfares (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, reward_amount REAL DEFAULT 0, max_claims INTEGER DEFAULT 0, claim_count INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS welfare_claims (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, welfare_id INTEGER NOT NULL, claimed_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, trade_password TEXT DEFAULT '', real_name TEXT DEFAULT '', id_card TEXT DEFAULT '', real_status TEXT DEFAULT 'unverified')`,
+        `CREATE TABLE IF NOT EXISTS withdraw_addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, coin TEXT NOT NULL, address TEXT NOT NULL, label TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))`
+    ];
+    for (const t of tables) {
+        originalExec(t);
+    }
+    db.saveToFile(DB_PATH);
 
     // 默认管理员
     const admin = db.prepare('SELECT id FROM admins WHERE username = ?').get('admin');
@@ -153,14 +191,6 @@ app.get('/api/user/info', (req, res) => {
 });
 
 // ==================== 质押 API ====================
-const STAKE_TIERS = [
-    { name: 'A档(体验仓)', min: 100, max: 300, dailyRate: 0.005, lockDays: 7, limitOnce: true },
-    { name: 'B档(新手仓)', min: 500, max: 1500, dailyRate: 0.004, lockDays: 30, limitOnce: false },
-    { name: 'C档(稳健仓)', min: 3000, max: 12000, dailyRate: 0.006, lockDays: 90, limitOnce: false },
-    { name: 'D档(进阶仓)', min: 20000, max: 60000, dailyRate: 0.007, lockDays: 180, limitOnce: false },
-    { name: 'S档(尊享仓)', min: 100000, max: Infinity, dailyRate: 0.01, lockDays: 420, limitOnce: false }
-];
-
 app.get('/api/stake/tiers', (req, res) => {
     res.json({ success: true, data: STAKE_TIERS });
 });
@@ -170,39 +200,30 @@ app.post('/api/stake/create', (req, res) => {
     if (!token) return res.json({ success: false, message: '未登录' });
     let userId;
     try { const decoded = jwt.verify(token, JWT_SECRET); userId = decoded.userId; } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
-
     const { tierName, amount, tradePassword } = req.body;
     if (!tradePassword) return res.json({ success: false, message: '请输入交易密码' });
     if (!verifyTradePwd(userId, tradePassword)) return res.json({ success: false, message: '交易密码错误' });
-
     const tier = STAKE_TIERS.find(t => t.name === tierName);
     if (!tier) return res.json({ success: false, message: '质押档位不存在' });
     if (amount < tier.min) return res.json({ success: false, message: `最低质押金额为 ${tier.min} USDT` });
-
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     if (user.balance < amount) return res.json({ success: false, message: '余额不足' });
-
-    // 累计上限校验
     const currentTotal = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM stakes WHERE user_id = ? AND tier = ? AND status = ?').get(userId, tierName, 'active');
     const totalAfter = (currentTotal?.total || 0) + amount;
     if (tier.max !== Infinity && totalAfter > tier.max) {
         return res.json({ success: false, message: `该档位累计上限 ${tier.max} USDT，您已质押 ${currentTotal.total} USDT` });
     }
-
     if (tier.limitOnce) {
         const existing = db.prepare('SELECT id FROM stakes WHERE user_id = ? AND tier = ?').get(userId, tierName);
         if (existing) return res.json({ success: false, message: 'A档体验仓每个账号终身限投1次' });
     }
-
     const startDate = new Date();
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + tier.lockDays);
     const formatDate = (d) => d.toISOString().split('T')[0];
-
     db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(amount, userId);
     const result = db.prepare('INSERT INTO stakes (user_id, tier, amount, start_date, end_date, daily_rate) VALUES (?, ?, ?, ?, ?, ?)').run(userId, tierName, amount, formatDate(startDate), formatDate(endDate), tier.dailyRate);
     db.prepare('INSERT INTO transactions (user_id, type, amount, related_id, note) VALUES (?, ?, ?, ?, ?)').run(userId, 'stake', -amount, result.lastInsertRowid, `质押${tierName}，锁仓${tier.lockDays}天`);
-
     res.json({ success: true, message: '质押成功', data: { id: result.lastInsertRowid, endDate: formatDate(endDate) } });
 });
 
@@ -221,7 +242,6 @@ app.get('/api/sign/today', (req, res) => {
     if (!token) return res.json({ success: false, message: '未登录' });
     let userId;
     try { const decoded = jwt.verify(token, JWT_SECRET); userId = decoded.userId; } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
-
     const now = new Date();
     const today = now.toISOString().split('T')[0];
     const hour = now.getHours();
@@ -229,22 +249,16 @@ app.get('/api/sign/today', (req, res) => {
     let currentPeriod = null;
     if ((hour === 12 && minute >= 0) || (hour === 13 && minute === 0)) currentPeriod = 'morning';
     else if ((hour === 20 && minute >= 0) || (hour === 21 && minute === 0)) currentPeriod = 'afternoon';
-
     const stakes = db.prepare('SELECT * FROM stakes WHERE user_id = ? AND status = ?').all(userId, 'active');
     const signedRecords = db.prepare('SELECT stake_id, period FROM sign_records WHERE user_id = ? AND sign_date = ?').all(userId, today);
     const signedMap = {};
     signedRecords.forEach(r => { signedMap[r.stake_id + '_' + r.period] = true; });
-
     const result = stakes.map(s => ({
-        id: s.id,
-        tier: s.tier,
-        amount: s.amount,
-        daily_rate: s.daily_rate,
+        id: s.id, tier: s.tier, amount: s.amount, daily_rate: s.daily_rate,
         daily_earnings: Math.floor(s.amount * s.daily_rate * 100) / 100,
         morning_signed: !!signedMap[s.id + '_morning'],
         afternoon_signed: !!signedMap[s.id + '_afternoon']
     }));
-
     res.json({ success: true, data: { currentPeriod, stakes: result } });
 });
 
@@ -253,11 +267,9 @@ app.post('/api/sign', (req, res) => {
     if (!token) return res.json({ success: false, message: '未登录' });
     let userId;
     try { const decoded = jwt.verify(token, JWT_SECRET); userId = decoded.userId; } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
-
     const { stakeId } = req.body;
     const stake = db.prepare('SELECT * FROM stakes WHERE id = ? AND user_id = ? AND status = ?').get(stakeId, userId, 'active');
     if (!stake) return res.json({ success: false, message: '质押不存在或已到期' });
-
     const now = new Date();
     const hour = now.getHours();
     const minute = now.getMinutes();
@@ -266,15 +278,12 @@ app.post('/api/sign', (req, res) => {
     if (hour === 12 || (hour === 13 && minute === 0)) period = 'morning';
     else if (hour === 20 || (hour === 21 && minute === 0)) period = 'afternoon';
     else return res.json({ success: false, message: '当前不在签到时段' });
-
     const existing = db.prepare('SELECT id FROM sign_records WHERE user_id = ? AND stake_id = ? AND period = ? AND sign_date = ?').get(userId, stakeId, period, today);
     if (existing) return res.json({ success: false, message: '该时段已签到' });
-
     const earnings = Math.floor(stake.amount * stake.daily_rate * 100) / 100;
     db.prepare('INSERT INTO sign_records (user_id, stake_id, period, sign_date) VALUES (?, ?, ?, ?)').run(userId, stakeId, period, today);
     db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(earnings, userId);
     db.prepare('INSERT INTO transactions (user_id, type, amount, related_id, note) VALUES (?, ?, ?, ?, ?)').run(userId, 'earnings', earnings, stakeId, `${stake.tier} ${period === 'morning' ? '上午' : '下午'}签到收益`);
-
     res.json({ success: true, message: `签到成功，获得 ${earnings} USDT`, data: { earnings, period } });
 });
 
@@ -302,7 +311,6 @@ app.post('/api/withdraw', (req, res) => {
     if (!address) return res.json({ success: false, message: '提款地址不能为空' });
     if (!tradePassword) return res.json({ success: false, message: '请输入交易密码' });
     if (!verifyTradePwd(userId, tradePassword)) return res.json({ success: false, message: '交易密码错误' });
-
     const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
     if (user.balance < amount) return res.json({ success: false, message: '余额不足' });
     db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(amount, userId);
@@ -366,19 +374,14 @@ app.post('/api/admin/create', (req, res) => {
         const hashed = bcrypt.hashSync(password, 10);
         db.prepare('INSERT INTO admins (username, password, role, parent_id) VALUES (?, ?, ?, ?)').run(username, hashed, 'agent', parentId);
         res.json({ success: true, message: '子管理员创建成功' });
-    } catch (err) {
-        res.json({ success: false, message: '管理员账号已存在或创建失败' });
-    }
+    } catch (err) { res.json({ success: false, message: '管理员账号已存在或创建失败' }); }
 });
 
 app.get('/api/admin/list', (req, res) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.json({ success: false, message: '未登录' });
     const admins = db.prepare('SELECT id, username, role, parent_id, created_at FROM admins').all();
     res.json({ success: true, data: admins });
 });
 
-// 公告管理
 app.get('/api/admin/announcements', (req, res) => {
     const list = db.prepare('SELECT * FROM announcements ORDER BY created_at DESC').all();
     res.json({ success: true, data: list });
@@ -391,7 +394,8 @@ app.post('/api/admin/announcements', (req, res) => {
 });
 app.put('/api/admin/announcements/:id', (req, res) => {
     const { content, is_active } = req.body;
-    db.prepare('UPDATE announcements SET content = COALESCE(?, content), is_active = COALESCE(?, is_active), updated_at = datetime("now","localtime") WHERE id = ?').run(content, is_active, req.params.id);
+    if (content !== undefined) db.prepare('UPDATE announcements SET content = ?, updated_at = datetime("now","localtime") WHERE id = ?').run(content, req.params.id);
+    if (is_active !== undefined) db.prepare('UPDATE announcements SET is_active = ?, updated_at = datetime("now","localtime") WHERE id = ?').run(is_active, req.params.id);
     res.json({ success: true, message: '公告已更新' });
 });
 app.delete('/api/admin/announcements/:id', (req, res) => {
@@ -399,13 +403,11 @@ app.delete('/api/admin/announcements/:id', (req, res) => {
     res.json({ success: true, message: '公告已删除' });
 });
 
-// 用户管理
 app.get('/api/admin/users', (req, res) => {
     const users = db.prepare('SELECT id, username, nickname, balance, total_staked, level, invite_code, created_at FROM users ORDER BY created_at DESC').all();
     res.json({ success: true, data: users });
 });
 
-// 福利活动管理
 app.get('/api/admin/welfares', (req, res) => {
     const list = db.prepare('SELECT * FROM welfares ORDER BY created_at DESC').all();
     res.json({ success: true, data: list });
@@ -418,7 +420,11 @@ app.post('/api/admin/welfares', (req, res) => {
 });
 app.put('/api/admin/welfares/:id', (req, res) => {
     const { title, description, reward_amount, max_claims, is_active } = req.body;
-    db.prepare('UPDATE welfares SET title = COALESCE(?, title), description = COALESCE(?, description), reward_amount = COALESCE(?, reward_amount), max_claims = COALESCE(?, max_claims), is_active = COALESCE(?, is_active) WHERE id = ?').run(title, description, reward_amount, max_claims, is_active, req.params.id);
+    if (title !== undefined) db.prepare('UPDATE welfares SET title = ? WHERE id = ?').run(title, req.params.id);
+    if (description !== undefined) db.prepare('UPDATE welfares SET description = ? WHERE id = ?').run(description, req.params.id);
+    if (reward_amount !== undefined) db.prepare('UPDATE welfares SET reward_amount = ? WHERE id = ?').run(reward_amount, req.params.id);
+    if (max_claims !== undefined) db.prepare('UPDATE welfares SET max_claims = ? WHERE id = ?').run(max_claims, req.params.id);
+    if (is_active !== undefined) db.prepare('UPDATE welfares SET is_active = ? WHERE id = ?').run(is_active, req.params.id);
     res.json({ success: true, message: '活动已更新' });
 });
 app.delete('/api/admin/welfares/:id', (req, res) => {
@@ -426,7 +432,6 @@ app.delete('/api/admin/welfares/:id', (req, res) => {
     res.json({ success: true, message: '活动已删除' });
 });
 
-// 用户端福利活动
 app.get('/api/welfares', (req, res) => {
     const list = db.prepare('SELECT * FROM welfares WHERE is_active = 1 ORDER BY created_at DESC').all();
     const token = req.headers.authorization?.split(' ')[1];
@@ -480,7 +485,6 @@ app.get('/api/user/level', (req, res) => {
     let userId;
     try { const decoded = jwt.verify(token, JWT_SECRET); userId = decoded.userId; } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
     const directCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE inviter_id = ?').get(userId).count;
-    // 递归计算团队总质押（简化处理，仅计算直推的质押总和，实际应递归）
     function getTeamStake(uid, visited = new Set()) {
         if (visited.has(uid)) return 0;
         visited.add(uid);
@@ -494,10 +498,8 @@ app.get('/api/user/level', (req, res) => {
         return total;
     }
     const teamStake = getTeamStake(userId);
-    // 判断等级（简化版，实际应查下级数量）
     let newLevel = 'normal';
     if (directCount >= 3 && teamStake >= 5000) newLevel = '1star';
-    // ... 此处省略更复杂的等级判断逻辑，实际项目可补充
     const levelNames = { normal: '普通用户', '1star': '一星·共建会员', '2star': '二星·同行会员', '3star': '三星·领航会员', '4star': '四星·生态长老', '5star': '五星·荣誉董事' };
     db.prepare('UPDATE users SET level = ? WHERE id = ?').run(newLevel, userId);
     res.json({ success: true, data: { level: newLevel, levelName: levelNames[newLevel] || newLevel, directCount, teamStake } });
@@ -528,7 +530,9 @@ app.put('/api/user/trade-password', (req, res) => {
     const existing = db.prepare('SELECT trade_password FROM user_settings WHERE user_id = ?').get(userId);
     if (existing && existing.trade_password) return res.json({ success: false, message: '交易密码已设置，如需修改请联系客服' });
     const hashed = bcrypt.hashSync(password, 10);
-    db.prepare('INSERT INTO user_settings (user_id, trade_password) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET trade_password = ?').run(userId, hashed, hashed);
+    const s = db.prepare('SELECT user_id FROM user_settings WHERE user_id = ?').get(userId);
+    if (s) db.prepare('UPDATE user_settings SET trade_password = ? WHERE user_id = ?').run(hashed, userId);
+    else db.prepare('INSERT INTO user_settings (user_id, trade_password) VALUES (?, ?)').run(userId, hashed);
     res.json({ success: true, message: '交易密码设置成功' });
 });
 
@@ -605,13 +609,14 @@ async function fetchMarketData() {
 }
 
 // ==================== 启动服务器 ====================
+let wss;
 initDB().then(() => {
     const server = app.listen(PORT, () => {
         console.log(`✅ 星瀚资本后端已启动：端口 ${PORT}`);
         console.log('🔑 默认管理员账号：admin / admin123');
     });
 
-    const wss = new WebSocketServer({ server });
+    wss = new WebSocketServer({ server });
     wss.on('connection', (ws) => {
         console.log('🔗 客户端已连接');
         if (marketData.length > 0) ws.send(JSON.stringify({ type: 'market', data: marketData }));
