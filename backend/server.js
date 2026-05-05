@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const fetch = require('node-fetch');
-
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = 'star_ocean_secret_key_2024';
@@ -125,7 +126,7 @@ async function initDB() {
         `CREATE TABLE IF NOT EXISTS stakes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, tier TEXT NOT NULL, amount REAL NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, daily_rate REAL NOT NULL, status TEXT DEFAULT 'active', created_at TEXT DEFAULT (datetime('now','localtime')))`,
         `CREATE TABLE IF NOT EXISTS sign_records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, stake_id INTEGER NOT NULL, period TEXT NOT NULL, sign_date TEXT NOT NULL, claimed INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')))`,
         `CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, related_id INTEGER, note TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))`,
-        `CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'admin', parent_id INTEGER, created_at TEXT DEFAULT (datetime('now','localtime')))`,
+        `CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'admin', parent_id INTEGER, google_2fa_secret TEXT DEFAULT '', temp_2fa_secret TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))`
         `CREATE TABLE IF NOT EXISTS announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')))`,
         `CREATE TABLE IF NOT EXISTS welfares (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, reward_amount REAL DEFAULT 0, max_claims INTEGER DEFAULT 0, claim_count INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')))`,
         `CREATE TABLE IF NOT EXISTS welfare_claims (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, welfare_id INTEGER NOT NULL, claimed_at TEXT DEFAULT (datetime('now','localtime')))`,
@@ -650,7 +651,123 @@ async function fetchMarketData() {
         console.log('📈 行情已更新');
     } catch (e) { console.error('行情拉取失败', e.message); }
 }
+// ==================== 谷歌验证器 ====================
 
+// 生成密钥和二维码（管理员绑定前调用）
+app.get('/api/admin/generate-2fa', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.json({ success: false, message: '未登录' });
+  let adminId;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    adminId = decoded.adminId;
+  } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
+
+  const secret = speakeasy.generateSecret({ length: 20, name: `星瀚资本:admin` });
+  // 将临时密钥存到数据库（用临时字段，绑定确认后才正式启用）
+  db.prepare('UPDATE admins SET temp_2fa_secret = ? WHERE id = ?').run(secret.base32, adminId);
+
+  QRCode.toDataURL(secret.otpauth_url, (err, data_url) => {
+    if (err) return res.json({ success: false, message: '二维码生成失败' });
+    res.json({ success: true, data: { secret: secret.base32, qrcode: data_url } });
+  });
+});
+
+// 确认绑定谷歌验证器
+app.post('/api/admin/confirm-2fa', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.json({ success: false, message: '未登录' });
+  let adminId;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    adminId = decoded.adminId;
+  } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
+
+  const { code } = req.body;
+  if (!code) return res.json({ success: false, message: '请输入验证码' });
+
+  const admin = db.prepare('SELECT temp_2fa_secret FROM admins WHERE id = ?').get(adminId);
+  if (!admin || !admin.temp_2fa_secret) return res.json({ success: false, message: '请先生成密钥' });
+
+  const verified = speakeasy.totp.verify({
+    secret: admin.temp_2fa_secret,
+    encoding: 'base32',
+    token: code,
+    window: 1  // 允许前后各一个时间窗口
+  });
+
+  if (!verified) return res.json({ success: false, message: '验证码错误' });
+
+  // 正式启用：将临时密钥转为正式密钥
+  db.prepare('UPDATE admins SET google_2fa_secret = temp_2fa_secret, temp_2fa_secret = NULL WHERE id = ?').run(adminId);
+  res.json({ success: true, message: '谷歌验证器绑定成功' });
+});
+
+// 修改后的管理员登录接口（如果已绑定验证器，返回 require_2fa）
+app.post('/api/admin/login', (req, res) => {
+  const { username, password } = req.body;
+  const admin = db.prepare('SELECT * FROM admins WHERE username = ?').get(username);
+  if (!admin || !bcrypt.compareSync(password, admin.password)) {
+    return res.json({ success: false, message: '账号或密码错误' });
+  }
+
+  // 如果已绑定谷歌验证器，返回 require_2fa 标记
+  if (admin.google_2fa_secret) {
+    return res.json({ success: true, require_2fa: true, message: '请输入谷歌验证码', data: { tempToken: jwt.sign({ adminId: admin.id, step: '2fa' }, JWT_SECRET, { expiresIn: '5m' }) } });
+  }
+
+  // 未绑定验证器，直接登录
+  const token = jwt.sign({ adminId: admin.id, role: admin.role }, JWT_SECRET, { expiresIn: '12h' });
+  res.json({ success: true, message: '登录成功', data: { token, role: admin.role, username: admin.username } });
+});
+
+// 管理员登录时验证谷歌验证码
+app.post('/api/admin/verify-2fa-login', (req, res) => {
+  const { tempToken, code } = req.body;
+  if (!tempToken || !code) return res.json({ success: false, message: '参数不全' });
+  try {
+    const decoded = jwt.verify(tempToken, JWT_SECRET);
+    if (decoded.step !== '2fa') return res.json({ success: false, message: '无效的临时凭证' });
+    
+    const admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(decoded.adminId);
+    if (!admin || !admin.google_2fa_secret) return res.json({ success: false, message: '验证器未绑定' });
+
+    const verified = speakeasy.totp.verify({
+      secret: admin.google_2fa_secret,
+      encoding: 'base32',
+      token: code,
+      window: 1
+    });
+    if (!verified) return res.json({ success: false, message: '谷歌验证码错误' });
+
+    const token = jwt.sign({ adminId: admin.id, role: admin.role }, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ success: true, message: '登录成功', data: { token, role: admin.role, username: admin.username } });
+  } catch (e) {
+    res.json({ success: false, message: '临时凭证已过期，请重新登录' });
+  }
+});
+app.put('/api/admin/change-password', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.json({ success: false, message: '未登录' });
+  let adminId;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    adminId = decoded.adminId;
+  } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
+
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) return res.json({ success: false, message: '旧密码和新密码不能为空' });
+  if (newPassword.length < 6) return res.json({ success: false, message: '新密码至少6位' });
+
+  const admin = db.prepare('SELECT password FROM admins WHERE id = ?').get(adminId);
+  if (!admin || !bcrypt.compareSync(oldPassword, admin.password)) {
+    return res.json({ success: false, message: '旧密码错误' });
+  }
+
+  const hashed = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE admins SET password = ? WHERE id = ?').run(hashed, adminId);
+  res.json({ success: true, message: '密码修改成功，请重新登录' });
+});
 // ==================== 启动服务器 ====================
 let wss;
 initDB().then(() => {
