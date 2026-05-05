@@ -58,7 +58,7 @@
   <div id="page-stake" class="page">
     <h2>🥩 质押挖矿</h2>
     <div id="stake-tiers"></div>
-    <div id="my-stakes"></div>
+    <div id="my-stakes"><div class="card sm-text">请先登录查看我的质押</div></div>
     <div id="sign-status" class="card" style="text-align:center;display:none;"></div>
     <div id="coin-animation" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999;"></div>
     <div id="stake-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center;">
@@ -334,17 +334,23 @@
       .then(res => { alert(res.message); if(res.success) checkLogin(); });
     }
 
-    // ==================== 质押 ====================
     function loadStakePage(){
-      if(!token) return;
-      fetch(API+'/api/stake/tiers')
-        .then(r => r.json())
-        .then(res => { if(res.success){ stakeTiers = res.data; renderStakeTiers(); } });
-      fetch(API+'/api/sign/today', { headers: { 'Authorization': 'Bearer '+token } })
-        .then(r => r.json())
-        .then(res => { if(res.success){ renderMyStakesWithSign(res.data); } });
-    }
+  // 档位列表不需要登录，任何人都能看
+  fetch(API+'/api/stake/tiers')
+    .then(r => r.json())
+    .then(res => { if(res.success){ stakeTiers = res.data; renderStakeTiers(); } });
 
+  // “我的质押”区域：有 token 才加载，没 token 显示提示
+  if(!token) {
+    document.getElementById('my-stakes').innerHTML = '<div class="card sm-text">请先登录查看我的质押</div>';
+    document.getElementById('sign-status').style.display = 'none';
+    return;
+  }
+
+  fetch(API+'/api/sign/today', { headers: { 'Authorization': 'Bearer '+token } })
+    .then(r => r.json())
+    .then(res => { if(res.success){ renderMyStakesWithSign(res.data); } });
+}
     function renderStakeTiers(){
       document.getElementById('stake-tiers').innerHTML = stakeTiers.map(t => `
         <div class="card" style="cursor:pointer;" onclick="openStakeModal('${t.name}')">
