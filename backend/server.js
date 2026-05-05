@@ -202,35 +202,71 @@ app.get('/api/stake/tiers', (req, res) => {
 });
 
 app.post('/api/stake/create', (req, res) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.json({ success: false, message: '未登录' });
-    let userId;
-    try { const decoded = jwt.verify(token, JWT_SECRET); userId = decoded.userId; } catch (err) { return res.json({ success: false, message: '登录已过期' }); }
-    const { tierName, amount, tradePassword } = req.body;
-    if (!tradePassword) return res.json({ success: false, message: '请输入交易密码' });
-    if (!verifyTradePwd(userId, tradePassword)) return res.json({ success: false, message: '交易密码错误' });
-    const tier = STAKE_TIERS.find(t => t.name === tierName);
-    if (!tier) return res.json({ success: false, message: '质押档位不存在' });
-    if (amount < tier.min) return res.json({ success: false, message: `最低质押金额为 ${tier.min} USDT` });
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.json({ success: false, message: '未登录' });
+
+  let userId;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    userId = decoded.userId;
+  } catch (err) {
+    return res.json({ success: false, message: '登录已过期' });
+  }
+
+  const { tierName, amount, tradePassword } = req.body;
+  if (!tradePassword) return res.json({ success: false, message: '请输入交易密码' });
+  if (!verifyTradePwd(userId, tradePassword)) return res.json({ success: false, message: '交易密码错误' });
+
+  const tier = STAKE_TIERS.find(t => t.name === tierName);
+  if (!tier) return res.json({ success: false, message: '质押档位不存在' });
+  if (!amount || amount < tier.min) return res.json({ success: false, message: `最低质押金额为 ${tier.min} USDT` });
+
+  try {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    if (!user) return res.json({ success: false, message: '用户不存在' });
     if (user.balance < amount) return res.json({ success: false, message: '余额不足' });
+
+    // 累计上限检查
     const currentTotal = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM stakes WHERE user_id = ? AND tier = ? AND status = ?').get(userId, tierName, 'active');
     const totalAfter = (currentTotal?.total || 0) + amount;
     if (tier.max !== Infinity && totalAfter > tier.max) {
-        return res.json({ success: false, message: `该档位累计上限 ${tier.max} USDT，您已质押 ${currentTotal.total} USDT` });
+      return res.json({ success: false, message: `该档位累计上限 ${tier.max} USDT` });
     }
+
+    // A档终身一次
     if (tier.limitOnce) {
-        const existing = db.prepare('SELECT id FROM stakes WHERE user_id = ? AND tier = ?').get(userId, tierName);
-        if (existing) return res.json({ success: false, message: 'A档体验仓每个账号终身限投1次' });
+      const exist = db.prepare('SELECT id FROM stakes WHERE user_id = ? AND tier = ?').get(userId, tierName);
+      if (exist) return res.json({ success: false, message: 'A档体验仓每个账号终身限投1次' });
     }
+
+    // 扣余额
+    db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(amount, userId);
+
+    // 计算日期
     const startDate = new Date();
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + tier.lockDays);
-    const formatDate = (d) => d.toISOString().split('T')[0];
-    db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(amount, userId);
-    const result = db.prepare('INSERT INTO stakes (user_id, tier, amount, start_date, end_date, daily_rate) VALUES (?, ?, ?, ?, ?, ?)').run(userId, tierName, amount, formatDate(startDate), formatDate(endDate), tier.dailyRate);
-    db.prepare('INSERT INTO transactions (user_id, type, amount, related_id, note) VALUES (?, ?, ?, ?, ?)').run(userId, 'stake', -amount, result.lastInsertRowid, `质押${tierName}，锁仓${tier.lockDays}天`);
-    res.json({ success: true, message: '质押成功', data: { id: result.lastInsertRowid, endDate: formatDate(endDate) } });
+    const formatDate = (d) => d.toISOString().slice(0,10);
+
+    // 插入质押记录，并安全获取 lastInsertRowid
+    const stakeRun = db.prepare('INSERT INTO stakes (user_id, tier, amount, start_date, end_date, daily_rate) VALUES (?, ?, ?, ?, ?, ?)').run(userId, tierName, amount, formatDate(startDate), formatDate(endDate), tier.dailyRate);
+    
+    let stakeId = stakeRun.lastInsertRowid;
+    // 如果获取不到，手动查一次
+    if (!stakeId) {
+      const lastRow = db.prepare('SELECT MAX(id) as id FROM stakes WHERE user_id = ?').get(userId);
+      stakeId = lastRow?.id || null;
+    }
+    if (!stakeId) throw new Error('质押记录插入失败');
+
+    // 记录流水
+    db.prepare('INSERT INTO transactions (user_id, type, amount, related_id, note) VALUES (?, ?, ?, ?, ?)').run(userId, 'stake', -amount, stakeId, `质押${tierName}`);
+    
+    res.json({ success: true, message: '质押成功', data: { id: stakeId, endDate: formatDate(endDate) } });
+  } catch (e) {
+    console.error('质押接口错误:', e);
+    res.json({ success: false, message: '质押失败：' + e.message });
+  }
 });
 
 app.get('/api/stake/list', (req, res) => {
