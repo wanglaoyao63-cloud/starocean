@@ -28,6 +28,13 @@ const STAKE_TIERS = [
     { name: 'S档(尊享仓)', min: 100000, max: Infinity, dailyRate: 0.01, lockDays: 420, limitOnce: false }
 ];
 
+// 持久化函数：将数据库保存到文件
+function saveDB() {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(DB_PATH, buffer);
+}
+
 async function initDB() {
     const SQL = await initSqlJs();
     if (fs.existsSync(DB_PATH)) {
@@ -37,7 +44,6 @@ async function initDB() {
         db = new SQL.Database();
     }
 
-    // 保存 SQL.js 原始方法，避免递归
     const originalPrepare = db.prepare.bind(db);
     const originalExec = db.exec.bind(db);
 
@@ -53,16 +59,16 @@ async function initDB() {
                 if (r.length > 0 && r[0].values.length > 0) {
                     lastInsertRowid = r[0].values[0][0];
                 }
-            } catch (e) { /* 非 INSERT 语句无 last_insert_rowid */ }
+            } catch (e) { }
             stmt.reset();
-            this.saveToFile(DB_PATH);
+            saveDB();
             return { changes, lastInsertRowid };
         }
         stmt.reset();
         return { changes: 0 };
     };
 
-    // 扩展 prepare 方法，返回兼容对象
+    // 扩展 prepare 方法
     db.prepare = function (sql) {
         const stmt = originalPrepare(sql);
         return {
@@ -78,7 +84,7 @@ async function initDB() {
                         }
                     } catch (e) { }
                     stmt.reset();
-                    db.saveToFile(DB_PATH);
+                    saveDB();
                     return { changes, lastInsertRowid };
                 }
                 stmt.reset();
@@ -109,7 +115,7 @@ async function initDB() {
     // 扩展 exec
     db.exec = function (sql) {
         const result = originalExec(sql);
-        this.saveToFile(DB_PATH);
+        saveDB();
         return result;
     };
 
@@ -129,7 +135,7 @@ async function initDB() {
     for (const t of tables) {
         originalExec(t);
     }
-    db.saveToFile(DB_PATH);
+    saveDB();
 
     // 默认管理员
     const admin = db.prepare('SELECT id FROM admins WHERE username = ?').get('admin');
