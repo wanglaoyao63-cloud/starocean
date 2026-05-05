@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>星瀚资本·管理后台</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;}
+    body{background:#0a0f1e;color:#fff;min-height:100vh;}
+    .login-box{max-width:400px;margin:100px auto;background:#111827;border-radius:16px;padding:30px;border:1px solid #1f2937;}
+    .login-box h2{color:#fbbf24;text-align:center;margin-bottom:20px;}
+    input{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #374151;background:#1f2937;color:#fff;font-size:16px;outline:none;}
+    input:focus{border-color:#fbbf24;}
+    textarea{width:100%;padding:12px;background:#1f2937;color:#fff;border:1px solid #374151;border-radius:8px;margin:8px 0;resize:vertical;outline:none;}
+    textarea:focus{border-color:#fbbf24;}
+    .btn{background:linear-gradient(135deg,#f59e0b,#d97706);border:none;border-radius:8px;color:#000;font-weight:bold;padding:12px 24px;cursor:pointer;font-size:16px;width:100%;margin-top:8px;}
+    .btn-sm{padding:6px 12px;font-size:13px;width:auto;margin:0;}
+    .btn-red{background:#ef4444;color:#fff;}
+    .btn-green{background:#22c55e;color:#000;}
+    .error-msg{color:#ef4444;font-size:14px;margin-top:8px;text-align:center;}
+    .container{display:flex;min-height:100vh;}
+    .sidebar{width:220px;background:#111827;border-right:1px solid #1f2937;padding:20px;flex-shrink:0;}
+    .sidebar h3{color:#fbbf24;margin-bottom:20px;}
+    .menu-item{padding:12px;margin:4px 0;border-radius:8px;cursor:pointer;color:#9ca3af;transition:all .2s;}
+    .menu-item:hover,.menu-item.active{background:#1f2937;color:#fbbf24;}
+    .main{flex:1;padding:24px;overflow-y:auto;}
+    .card{background:#111827;border-radius:12px;padding:16px;margin:12px 0;border:1px solid #1f2937;}
+    .flex-between{display:flex;justify-content:space-between;align-items:center;}
+    .gold{color:#fbbf24;}
+    .sm-text{font-size:13px;color:#9ca3af;}
+    table{width:100%;border-collapse:collapse;margin-top:12px;}
+    th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #1f2937;font-size:14px;}
+    th{color:#9ca3af;}
+    .badge{display:inline-block;background:#fbbf24;color:#000;border-radius:20px;padding:2px 10px;font-size:11px;}
+    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center;}
+    .modal-box{background:#111827;border-radius:16px;padding:20px;width:90%;max-width:500px;}
+  </style>
+</head>
+<body>
+
+  <!-- 登录界面 -->
+  <div id="login-page">
+    <div class="login-box">
+      <h2>🔐 管理后台</h2>
+      <input type="text" id="admin-username" placeholder="管理员账号">
+      <input type="password" id="admin-password" placeholder="管理员密码">
+      <button class="btn" onclick="adminLogin()">登录</button>
+      <div class="error-msg" id="login-error"></div>
+      <p class="sm-text" style="text-align:center;margin-top:12px;">默认账号：admin / admin123</p>
+    </div>
+  </div>
+
+  <!-- 管理主界面 -->
+  <div id="admin-panel" style="display:none;">
+    <div class="container">
+      <div class="sidebar">
+        <h3>⭐ 星瀚资本</h3>
+        <div class="menu-item active" data-section="announcements">📢 公告管理</div>
+        <div class="menu-item" data-section="welfares">🎁 福利活动</div>
+        <div class="menu-item" data-section="users">👥 用户管理</div>
+        <div class="menu-item" data-section="admins">👤 管理员管理</div>
+        <div class="menu-item" onclick="adminLogout()" style="color:#ef4444;">🚪 退出登录</div>
+      </div>
+      <div class="main">
+        <!-- 公告管理 -->
+        <div id="section-announcements" class="section-box">
+          <div class="flex-between"><h2>📢 公告管理</h2><button class="btn btn-sm" onclick="showAddAnnouncement()">+ 添加公告</button></div>
+          <div id="announcement-list"></div>
+        </div>
+        <!-- 福利活动管理 -->
+        <div id="section-welfares" class="section-box" style="display:none;">
+          <div class="flex-between"><h2>🎁 福利活动</h2><button class="btn btn-sm" onclick="showAddWelfare()">+ 添加活动</button></div>
+          <div id="welfare-list"></div>
+        </div>
+        <!-- 用户管理 -->
+        <div id="section-users" class="section-box" style="display:none;">
+          <h2>👥 用户列表</h2>
+          <div id="user-list"></div>
+        </div>
+        <!-- 管理员管理 -->
+        <div id="section-admins" class="section-box" style="display:none;">
+          <div class="flex-between"><h2>👤 管理员列表</h2><button class="btn btn-sm" onclick="showAddAdmin()">+ 添加管理员</button></div>
+          <div id="admin-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 公告弹窗 -->
+  <div class="modal" id="modal-announcement">
+    <div class="modal-box">
+      <h3 id="modal-announcement-title">添加公告</h3>
+      <textarea id="announcement-content" rows="4" placeholder="公告内容"></textarea>
+      <button class="btn" id="announcement-submit">发布</button>
+      <button class="btn" style="background:#374151;color:#fff;margin-top:4px;" onclick="closeModal('modal-announcement')">取消</button>
+    </div>
+  </div>
+
+  <!-- 福利活动弹窗 -->
+  <div class="modal" id="modal-welfare">
+    <div class="modal-box">
+      <h3 id="modal-welfare-title">添加活动</h3>
+      <input type="text" id="welfare-title" placeholder="活动标题">
+      <textarea id="welfare-desc" rows="3" placeholder="活动描述"></textarea>
+      <input type="number" id="welfare-amount" placeholder="奖励金额 (USDT)" min="0" step="0.01">
+      <input type="number" id="welfare-max" placeholder="最大领取次数 (0不限)" min="0">
+      <button class="btn" id="welfare-submit">发布</button>
+      <button class="btn" style="background:#374151;color:#fff;margin-top:4px;" onclick="closeModal('modal-welfare')">取消</button>
+    </div>
+  </div>
+
+  <!-- 管理员弹窗 -->
+  <div class="modal" id="modal-admin">
+    <div class="modal-box">
+      <h3>添加子管理员</h3>
+      <input type="text" id="new-admin-username" placeholder="账号">
+      <input type="password" id="new-admin-password" placeholder="密码">
+      <button class="btn" onclick="createSubAdmin()">创建</button>
+      <button class="btn" style="background:#374151;color:#fff;margin-top:4px;" onclick="closeModal('modal-admin')">取消</button>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:3000';
+    let adminToken = localStorage.getItem('adminToken') || '';
+    let editingAnnouncementId = null;
+    let editingWelfareId = null;
+
+    if(adminToken) loadAdminPanel();
+
+    // 登录
+    function adminLogin(){
+      const username = document.getElementById('admin-username').value.trim();
+      const password = document.getElementById('admin-password').value.trim();
+      fetch(API+'/api/admin/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({username, password})
+      })
+      .then(r => r.json())
+      .then(res => {
+        if(res.success){
+          adminToken = res.data.token;
+          localStorage.setItem('adminToken', adminToken);
+          loadAdminPanel();
+        } else {
+          document.getElementById('login-error').textContent = res.message;
+        }
+      });
+    }
+
+    function loadAdminPanel(){
+      document.getElementById('login-page').style.display = 'none';
+      document.getElementById('admin-panel').style.display = 'block';
+      loadAnnouncements();
+    }
+
+    function adminLogout(){
+      adminToken = '';
+      localStorage.removeItem('adminToken');
+      document.getElementById('login-page').style.display = 'block';
+      document.getElementById('admin-panel').style.display = 'none';
+    }
+
+    // 侧边栏切换
+    document.querySelectorAll('.sidebar .menu-item[data-section]').forEach(item => {
+      item.addEventListener('click', function(){
+        showSection(this.dataset.section, this);
+      });
+    });
+
+    function showSection(section, el){
+      document.querySelectorAll('.section-box').forEach(s => s.style.display = 'none');
+      document.getElementById('section-'+section).style.display = 'block';
+      document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+      if(el) el.classList.add('active');
+      if(section === 'users') loadUsers();
+      if(section === 'admins') loadAdmins();
+      if(section === 'welfares') loadWelfares();
+      if(section === 'announcements') loadAnnouncements();
+    }
+
+    function closeModal(id){
+      document.getElementById(id).style.display = 'none';
+    }
+
+    // ========== 公告 ==========
+    function loadAnnouncements(){
+      fetch(API+'/api/admin/announcements')
+        .then(r => r.json())
+        .then(res => {
+          const list = res.data || [];
+          document.getElementById('announcement-list').innerHTML = list.length > 0 ? list.map(a => `
+            <div class="card">
+              <div class="flex-between">
+                <span>${a.content}</span>
+                <span class="badge">${a.is_active ? '显示中' : '已隐藏'}</span>
+              </div>
+              <div class="sm-text">${a.created_at}</div>
+              <div style="margin-top:8px;">
+                <button class="btn btn-sm" onclick="editAnnouncement(${a.id}, '${a.content.replace(/'/g, "\\'")}')">✏️</button>
+                <button class="btn btn-sm btn-red" onclick="deleteAnnouncement(${a.id})">🗑</button>
+              </div>
+            </div>
+          `).join('') : '<p>暂无公告</p>';
+        });
+    }
+
+    function showAddAnnouncement(){
+      editingAnnouncementId = null;
+      document.getElementById('modal-announcement-title').textContent = '添加公告';
+      document.getElementById('announcement-content').value = '';
+      document.getElementById('announcement-submit').textContent = '发布';
+      document.getElementById('modal-announcement').style.display = 'flex';
+    }
+
+    function editAnnouncement(id, content){
+      editingAnnouncementId = id;
+      document.getElementById('modal-announcement-title').textContent = '编辑公告';
+      document.getElementById('announcement-content').value = content;
+      document.getElementById('announcement-submit').textContent = '保存修改';
+      document.getElementById('modal-announcement').style.display = 'flex';
+    }
+
+    document.getElementById('announcement-submit').addEventListener('click', () => {
+      const content = document.getElementById('announcement-content').value.trim();
+      if(!content) return;
+      const url = editingAnnouncementId ? API+'/api/admin/announcements/'+editingAnnouncementId : API+'/api/admin/announcements';
+      fetch(url, {
+        method: editingAnnouncementId ? 'PUT' : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({content})
+      })
+      .then(r => r.json())
+      .then(res => { alert(res.message); closeModal('modal-announcement'); loadAnnouncements(); });
+    });
+
+    function deleteAnnouncement(id){
+      if(!confirm('确定删除？')) return;
+      fetch(API+'/api/admin/announcements/'+id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(res => { alert(res.message); loadAnnouncements(); });
+    }
+
+    // ========== 福利活动 ==========
+    function loadWelfares(){
+      fetch(API+'/api/admin/welfares')
+        .then(r => r.json())
+        .then(res => {
+          const list = res.data || [];
+          document.getElementById('welfare-list').innerHTML = list.length > 0 ? list.map(w => `
+            <div class="card">
+              <div class="flex-between">
+                <span><b>${w.title}</b> <span class="badge">${w.is_active ? '进行中' : '已隐藏'}</span></span>
+                <span class="gold">${w.reward_amount} USDT</span>
+              </div>
+              <div class="sm-text">${w.description || ''}</div>
+              <div class="sm-text">已领取：${w.claim_count} / ${w.max_claims > 0 ? w.max_claims : '不限'}</div>
+              <div style="margin-top:8px;">
+                <button class="btn btn-sm" onclick="editWelfare(${w.id})">✏️</button>
+                <button class="btn btn-sm btn-red" onclick="deleteWelfare(${w.id})">🗑</button>
+              </div>
+            </div>
+          `).join('') : '<p>暂无活动</p>';
+        });
+    }
+
+    function showAddWelfare(){
+      editingWelfareId = null;
+      document.getElementById('modal-welfare-title').textContent = '添加活动';
+      document.getElementById('welfare-title').value = '';
+      document.getElementById('welfare-desc').value = '';
+      document.getElementById('welfare-amount').value = '';
+      document.getElementById('welfare-max').value = '';
+      document.getElementById('modal-welfare').style.display = 'flex';
+    }
+
+    function editWelfare(id){
+      editingWelfareId = id;
+      fetch(API+'/api/admin/welfares')
+        .then(r => r.json())
+        .then(res => {
+          const w = (res.data || []).find(x => x.id === id);
+          if(!w) return;
+          document.getElementById('modal-welfare-title').textContent = '编辑活动';
+          document.getElementById('welfare-title').value = w.title;
+          document.getElementById('welfare-desc').value = w.description || '';
+          document.getElementById('welfare-amount').value = w.reward_amount;
+          document.getElementById('welfare-max').value = w.max_claims;
+          document.getElementById('modal-welfare').style.display = 'flex';
+        });
+    }
+
+    function deleteWelfare(id){
+      if(!confirm('确定删除？')) return;
+      fetch(API+'/api/admin/welfares/'+id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(res => { alert(res.message); loadWelfares(); });
+    }
+
+    document.getElementById('welfare-submit').addEventListener('click', () => {
+      const title = document.getElementById('welfare-title').value.trim();
+      const description = document.getElementById('welfare-desc').value.trim();
+      const reward_amount = parseFloat(document.getElementById('welfare-amount').value) || 0;
+      const max_claims = parseInt(document.getElementById('welfare-max').value) || 0;
+      if(!title) return alert('请输入标题');
+      const url = editingWelfareId ? API+'/api/admin/welfares/'+editingWelfareId : API+'/api/admin/welfares';
+      fetch(url, {
+        method: editingWelfareId ? 'PUT' : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ title, description, reward_amount, max_claims })
+      })
+      .then(r => r.json())
+      .then(res => { alert(res.message); closeModal('modal-welfare'); loadWelfares(); });
+    });
+
+    // ========== 用户 ==========
+    function loadUsers(){
+      fetch(API+'/api/admin/users', { headers: {'Authorization':'Bearer '+adminToken} })
+        .then(r => r.json())
+        .then(res => {
+          const users = res.data || [];
+          let html = '<table><thead><tr><th>ID</th><th>用户名</th><th>昵称</th><th>余额</th><th>质押总额</th><th>等级</th></tr></thead><tbody>';
+          users.forEach(u => { html += `<tr><td>${u.id}</td><td>${u.username}</td><td>${u.nickname||'-'}</td><td>${u.balance}</td><td>${u.total_staked}</td><td>${u.level}</td></tr>`; });
+          html += '</tbody></table>';
+          document.getElementById('user-list').innerHTML = html;
+        });
+    }
+
+    // ========== 管理员 ==========
+    function loadAdmins(){
+      fetch(API+'/api/admin/list', { headers: {'Authorization':'Bearer '+adminToken} })
+        .then(r => r.json())
+        .then(res => {
+          const admins = res.data || [];
+          let html = '<table><thead><tr><th>ID</th><th>账号</th><th>角色</th><th>上级ID</th></tr></thead><tbody>';
+          admins.forEach(a => { html += `<tr><td>${a.id}</td><td>${a.username}</td><td><span class="badge">${a.role}</span></td><td>${a.parent_id||'-'}</td></tr>`; });
+          html += '</tbody></table>';
+          document.getElementById('admin-list').innerHTML = html;
+        });
+    }
+
+    function showAddAdmin(){
+      document.getElementById('modal-admin').style.display = 'flex';
+    }
+
+    function createSubAdmin(){
+      const username = document.getElementById('new-admin-username').value.trim();
+      const password = document.getElementById('new-admin-password').value.trim();
+      if(!username || !password) return alert('请填写完整');
+      fetch(API+'/api/admin/create', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+adminToken},
+        body: JSON.stringify({username, password})
+      })
+      .then(r => r.json())
+      .then(res => { alert(res.message); closeModal('modal-admin'); loadAdmins(); });
+    }
+  </script>
+</body>
+</html>

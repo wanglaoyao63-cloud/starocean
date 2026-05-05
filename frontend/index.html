@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>星瀚资本·节点共建</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;}
+    body{background:#0a0f1e;color:#fff;min-height:100vh;padding-bottom:60px;}
+    .page{display:none;padding:12px;animation:fadeIn .3s;}
+    .page.active{display:block;}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    .tab-bar{
+      position:fixed;bottom:0;left:0;right:0;height:60px;background:#111827;
+      display:flex;border-top:1px solid #1f2937;z-index:100;padding-bottom:env(safe-area-inset-bottom);
+    }
+    .tab-item{
+      flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-size:12px;color:#6b7280;cursor:pointer;user-select:none;transition:all .2s;
+    }
+    .tab-item.active{color:#fbbf24;font-weight:bold;text-shadow:0 0 10px rgba(251,191,36,0.5);}
+    .tab-item .icon{font-size:20px;margin-bottom:2px;}
+    .card{background:#111827;border-radius:12px;padding:14px;margin:10px 0;border:1px solid #1f2937;}
+    .btn{
+      background:linear-gradient(135deg,#f59e0b,#d97706);border:none;border-radius:8px;
+      color:#000;font-weight:bold;padding:14px 24px;cursor:pointer;font-size:15px;width:100%;margin-top:8px;
+    }
+    .btn:active{opacity:.8;}
+    .btn-sm{padding:6px 12px;font-size:13px;width:auto;margin:0;}
+    input,textarea{
+      width:100%;padding:14px;margin:8px 0;border-radius:8px;border:1px solid #374151;
+      background:#1f2937;color:#fff;font-size:16px;outline:none;
+    }
+    input:focus,textarea:focus{border-color:#fbbf24;}
+    .badge{display:inline-block;background:#fbbf24;color:#000;border-radius:20px;padding:4px 12px;font-size:12px;margin:4px;}
+    .gold{color:#fbbf24;}
+    .flex-between{display:flex;justify-content:space-between;align-items:center;}
+    h2{margin-bottom:12px;color:#fbbf24;font-size:18px;}
+    .sm-text{font-size:13px;color:#9ca3af;}
+    .error-msg{color:#ef4444;font-size:14px;margin-top:8px;}
+    .btn-disabled{background:#4b5563;color:#9ca3af;cursor:not-allowed;border:none;border-radius:8px;font-weight:bold;padding:14px 24px;font-size:15px;width:100%;margin-top:8px;}
+    @media (min-width: 768px) {
+      .page{max-width:600px;margin:0 auto;}
+      .tab-bar{max-width:600px;left:50%;transform:translateX(-50%);}
+    }
+  </style>
+</head>
+<body>
+  <div id="page-home" class="page active">
+    <h2>📢 公告</h2>
+    <div id="announcements" class="card">暂无公告</div>
+    <button class="btn" onclick="switchPage('page-activities')" style="margin-top:12px;">🎁 福利活动中心</button>
+  </div>
+  <div id="page-market" class="page">
+    <h2>📈 实时行情</h2>
+    <div id="market-table"></div>
+  </div>
+  <div id="page-stake" class="page">
+    <h2>🥩 质押挖矿</h2>
+    <div id="stake-tiers"></div>
+    <div id="my-stakes"></div>
+    <div id="sign-status" class="card" style="text-align:center;display:none;"></div>
+    <div id="coin-animation" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999;"></div>
+    <div id="stake-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center;">
+      <div style="background:#111827;border-radius:16px;padding:20px;width:90%;max-width:400px;">
+        <h2 style="color:#fbbf24;" id="stake-modal-title">确认质押</h2>
+        <div class="sm-text">档位：<span id="stk-tier"></span></div>
+        <div class="sm-text">日利率：<span id="stk-rate"></span></div>
+        <div class="sm-text">锁仓天数：<span id="stk-lock"></span></div>
+        <input type="number" id="stk-amount" placeholder="输入质押金额 (USDT)" min="1">
+        <input type="password" id="stk-trade-pwd" placeholder="请输入6位交易密码" maxlength="6">
+        <div class="sm-text">可用余额：<span id="stk-balance" class="gold"></span> USDT</div>
+        <button class="btn" id="stk-confirm">确认质押</button>
+        <div id="stk-error" class="error-msg"></div>
+        <button onclick="closeStakeModal()" style="background:transparent;border:1px solid #374151;color:#fff;border-radius:8px;padding:8px;width:100%;margin-top:8px;">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div id="page-me" class="page">
+    <h2>👤 我的</h2>
+    <div id="user-panel"><div class="card" style="text-align:center"><p>请先登录</p><button class="btn" onclick="showLogin()">登录 / 注册</button></div></div>
+  </div>
+  <div id="page-my-level" class="page">
+    <div style="display:flex;align-items:center;margin-bottom:16px;">
+      <button onclick="switchPage('page-me')" style="background:transparent;border:none;color:#fbbf24;font-size:20px;cursor:pointer;">← 返回</button>
+      <h2 style="margin:0 0 0 12px;">⭐ 我的等级</h2>
+    </div>
+    <div id="level-content" class="card">加载中...</div>
+  </div>
+  <div id="page-my-team" class="page">
+    <div style="display:flex;align-items:center;margin-bottom:16px;">
+      <button onclick="switchPage('page-me')" style="background:transparent;border:none;color:#fbbf24;font-size:20px;cursor:pointer;">← 返回</button>
+      <h2 style="margin:0 0 0 12px;">👥 我的团队</h2>
+    </div>
+    <div id="team-content" class="card">加载中...</div>
+  </div>
+  <div id="page-activities" class="page">
+    <div style="display:flex;align-items:center;margin-bottom:16px;">
+      <button onclick="switchPage('page-home')" style="background:transparent;border:none;color:#fbbf24;font-size:20px;cursor:pointer;">← 返回</button>
+      <h2 style="margin:0 0 0 12px;">🎁 福利活动</h2>
+    </div>
+    <div id="activities-list"></div>
+  </div>
+  <div id="page-my-trades" class="page">
+    <div style="display:flex;align-items:center;margin-bottom:16px;">
+      <button onclick="switchPage('page-me')" style="background:transparent;border:none;color:#fbbf24;font-size:20px;cursor:pointer;">← 返回</button>
+      <h2 style="margin:0 0 0 12px;">📋 交易记录</h2>
+    </div>
+    <div id="trades-list"></div>
+  </div>
+  <div id="page-my-bills" class="page">
+    <div style="display:flex;align-items:center;margin-bottom:16px;">
+      <button onclick="switchPage('page-me')" style="background:transparent;border:none;color:#fbbf24;font-size:20px;cursor:pointer;">← 返回</button>
+      <h2 style="margin:0 0 0 12px;">📊 账变记录</h2>
+    </div>
+    <div id="bills-list"></div>
+  </div>
+  <div id="welfare-detail-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:300;align-items:center;justify-content:center;">
+    <div style="background:#111827;border-radius:16px;padding:20px;width:90%;max-width:400px;">
+      <h3 id="welfare-detail-title" style="color:#fbbf24;"></h3>
+      <p id="welfare-detail-desc" class="sm-text"></p>
+      <p id="welfare-detail-reward" class="gold"></p>
+      <button class="btn" id="welfare-claim-btn" onclick="claimWelfare()">领取奖励</button>
+      <button class="btn" style="background:transparent;border:1px solid #374151;color:#fff;margin-top:8px;" onclick="closeWelfareDetail()">关闭</button>
+    </div>
+  </div>
+  <div class="tab-bar">
+    <div class="tab-item active" data-page="page-home"><span class="icon">🏠</span>首页</div>
+    <div class="tab-item" data-page="page-market"><span class="icon">📈</span>行情</div>
+    <div class="tab-item" data-page="page-stake"><span class="icon">🥩</span>质押</div>
+    <div class="tab-item" data-page="page-me"><span class="icon">👤</span>我的</div>
+  </div>
+  <div id="login-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center;">
+    <div style="background:#111827;border-radius:16px;padding:20px;width:90%;max-width:400px;">
+      <h2 id="login-title">登录</h2>
+      <input type="text" id="login-username" placeholder="用户名">
+      <input type="password" id="login-password" placeholder="密码">
+      <input type="text" id="invite-code" placeholder="邀请码 (注册时需要)" style="display:none;">
+      <button class="btn" id="login-btn">登录</button>
+      <p style="text-align:center;margin-top:12px;color:#9ca3af;"><span id="toggle-link" style="color:#fbbf24;cursor:pointer;">没有账号？去注册</span></p>
+      <div id="login-error" class="error-msg"></div>
+      <button onclick="closeLogin()" style="background:transparent;border:1px solid #374151;color:#fff;border-radius:8px;padding:8px;width:100%;margin-top:8px;">关闭</button>
+    </div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem('token') || '';
+    let userInfo = null;
+    let userSettings = null;
+    const API = 'http://localhost:3000';
+    let homeCache = { announcements: null };
+    let stakeTiers = [];
+    let currentStakeTier = null;
+    let currentWelfareId = null;
+
+    document.querySelectorAll('.tab-item').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.page;
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById(target).classList.add('active');
+        document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        if (target === 'page-me') checkLogin();
+        if (target === 'page-home') loadHomeData();
+        if (target === 'page-stake') loadStakePage();
+      });
+    });
+
+    function switchPage(pageId) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById(pageId).classList.add('active');
+      if (pageId === 'page-my-level') loadMyLevel();
+      if (pageId === 'page-my-team') loadMyTeam();
+      if (pageId === 'page-me') checkLogin();
+      if (pageId === 'page-activities') loadActivities();
+      if (pageId === 'page-my-trades') loadMyTrades();
+      if (pageId === 'page-my-bills') loadMyBills();
+    }
+
+    function checkLogin(){
+      if(!token) return showLogin();
+      fetch(API+'/api/user/info', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => {
+          if(res.success){
+            userInfo = res.data;
+            loadUserSettings();
+          } else { logout(); }
+        });
+    }
+
+    function loadUserSettings(){
+      fetch(API+'/api/user/settings', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => {
+          userSettings = res.data || {};
+          userInfo.hasTradePwd = userSettings.trade_password === '******';
+          fetch(API+'/api/withdraw/addresses', { headers: { 'Authorization': 'Bearer '+token } })
+            .then(r => r.json())
+            .then(res2 => {
+              userInfo.hasAddress = res2.success && res2.data.length > 0;
+              renderUserPanel();
+              fetchHomeData();
+            });
+        });
+    }
+
+    function fetchHomeData(){
+      fetch(API + '/api/admin/announcements')
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && res.data.length > 0) homeCache.announcements = res.data.filter(a => a.is_active);
+          else homeCache.announcements = [];
+          if (document.getElementById('page-home').classList.contains('active')) renderHomeData();
+        })
+        .catch(() => { homeCache.announcements = []; });
+    }
+
+    function loadHomeData(){
+      if (homeCache.announcements !== null) { renderHomeData(); return; }
+      fetchHomeData();
+    }
+
+    function renderHomeData(){
+      if (homeCache.announcements && homeCache.announcements.length > 0) {
+        document.getElementById('announcements').innerHTML = homeCache.announcements.map(a => `<p style="margin:4px 0;">📌 ${a.content}</p>`).join('');
+      } else {
+        document.getElementById('announcements').innerHTML = '暂无公告';
+      }
+    }
+
+    let isLoginMode = true;
+    function showLogin(mode = true){
+      isLoginMode = mode;
+      document.getElementById('login-modal').style.display = 'flex';
+      document.getElementById('login-title').textContent = mode ? '登录' : '注册';
+      document.getElementById('login-btn').textContent = mode ? '登录' : '注册';
+      document.getElementById('invite-code').style.display = mode ? 'none' : 'block';
+      document.getElementById('toggle-link').textContent = mode ? '没有账号？去注册' : '已有账号？去登录';
+      document.getElementById('login-error').textContent = '';
+    }
+    function closeLogin(){ document.getElementById('login-modal').style.display = 'none'; }
+
+    document.getElementById('toggle-link').addEventListener('click', () => showLogin(!isLoginMode));
+    document.getElementById('login-btn').addEventListener('click', () => {
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+      if(!username || !password) return;
+      const body = { username, password };
+      if(!isLoginMode){ body.inviteCode = document.getElementById('invite-code').value.trim() || ''; }
+      const url = isLoginMode ? '/api/login' : '/api/register';
+      fetch(API+url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      .then(r => r.json())
+      .then(res => {
+        if(res.success){
+          token = res.data.token;
+          localStorage.setItem('token', token);
+          closeLogin();
+          checkLogin();
+        } else {
+          document.getElementById('login-error').textContent = res.message;
+        }
+      });
+    });
+
+    function logout(){
+      token = '';
+      localStorage.removeItem('token');
+      userInfo = null;
+      document.getElementById('user-panel').innerHTML = `<div class="card" style="text-align:center"><p>请先登录</p><button class="btn" onclick="showLogin()">登录 / 注册</button></div>`;
+    }
+
+    function renderUserPanel(){
+      const panel = document.getElementById('user-panel');
+      panel.innerHTML = `
+        <div class="card" style="text-align:center;padding:20px 16px;">
+          <div style="margin-bottom:8px;">
+            ${userInfo.avatar && userInfo.avatar.startsWith('/uploads') ? `<img src="http://localhost:3000${userInfo.avatar}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #fbbf24;">` : `<span style="font-size:48px;">${userInfo.avatar || '🦊'}</span>`}
+          </div>
+          <div style="font-size:18px;font-weight:bold;">${userInfo.nickname || userInfo.username}</div>
+          <div class="sm-text">ID: ${userInfo.invite_code}</div>
+        </div>
+        <div class="card" style="background:linear-gradient(135deg,#1f2937,#111827);">
+          <div class="sm-text">总资产 (USDT)</div>
+          <div style="font-size:28px;font-weight:bold;color:#fbbf24;margin:8px 0;">${(userInfo.balance || 0).toFixed(2)}</div>
+          <div class="flex-between sm-text"><span>可用余额</span><span class="gold">${(userInfo.available_balance || 0).toFixed(2)}</span></div>
+          <div class="flex-between sm-text"><span>质押总额</span><span>${(userInfo.total_staked || 0).toFixed(2)}</span></div>
+        </div>
+        <div style="display:flex;gap:12px;margin:12px 0;">
+          <button class="btn" style="flex:1;background:#22c55e;" onclick="showRecharge()">📥 充值</button>
+          <button class="btn" style="flex:1;background:#ef4444;" onclick="showWithdraw()">📤 提款</button>
+        </div>
+        <div class="card" onclick="switchPage('page-my-trades')" style="cursor:pointer;"><div class="flex-between"><span>📋 交易记录</span><span style="color:#6b7280;">›</span></div></div>
+        <div class="card" onclick="switchPage('page-my-bills')" style="cursor:pointer;"><div class="flex-between"><span>📊 账变记录</span><span style="color:#6b7280;">›</span></div></div>
+        <div class="card" onclick="showSettings()" style="cursor:pointer;"><div class="flex-between"><span>⚙️ 设置</span><span style="color:#6b7280;">›</span></div></div>
+        <div class="flex-between" style="margin:12px 0;gap:12px;">
+          <div class="card" style="flex:1;text-align:center;" onclick="switchPage('page-my-level')"><div>⭐ 我的等级</div><div class="gold">${userInfo.level || '普通用户'}</div></div>
+          <div class="card" style="flex:1;text-align:center;" onclick="switchPage('page-my-team')"><div>👥 我的团队</div><div class="gold">--</div></div>
+        </div>
+      `;
+    }
+
+    function showRecharge(){
+      if(!token) return showLogin();
+      const amount = prompt('请输入充值金额 (USDT):');
+      if(!amount || isNaN(amount) || amount <= 0) return;
+      fetch(API+'/api/recharge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ amount: parseFloat(amount) })
+      })
+      .then(r => r.json())
+      .then(res => { alert(res.message); if(res.success) checkLogin(); });
+    }
+
+    function showWithdraw(){
+      if(!token) return showLogin();
+      const amount = prompt('请输入提现金额 (USDT):');
+      if(!amount || isNaN(amount) || amount <= 0) return;
+      const address = prompt('请输入提款地址:');
+      if(!address) return;
+      const tradePassword = prompt('请输入6位交易密码:');
+      if(!tradePassword) return;
+      fetch(API+'/api/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ amount: parseFloat(amount), address, tradePassword })
+      })
+      .then(r => r.json())
+      .then(res => { alert(res.message); if(res.success) checkLogin(); });
+    }
+
+    // ==================== 质押 ====================
+    function loadStakePage(){
+      if(!token) return;
+      fetch(API+'/api/stake/tiers')
+        .then(r => r.json())
+        .then(res => { if(res.success){ stakeTiers = res.data; renderStakeTiers(); } });
+      fetch(API+'/api/sign/today', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => { if(res.success){ renderMyStakesWithSign(res.data); } });
+    }
+
+    function renderStakeTiers(){
+      document.getElementById('stake-tiers').innerHTML = stakeTiers.map(t => `
+        <div class="card" style="cursor:pointer;" onclick="openStakeModal('${t.name}')">
+          <div class="flex-between"><span style="font-weight:bold;">${t.name}</span><span class="gold">${(t.dailyRate*100).toFixed(1)}% / 天</span></div>
+          <div class="flex-between sm-text" style="margin-top:8px;"><span>单笔${t.min} USDT起 · 累计上限${t.max === null || t.max > 999999 ? '无' : t.max + ' USDT'}</span><span>锁仓 ${t.lockDays} 天</span></div>
+          ${t.limitOnce ? '<div class="badge" style="margin-top:8px;">终身限投1次（100~300 USDT）</div>' : ''}
+        </div>
+      `).join('');
+    }
+
+    function openStakeModal(tierName){
+      if(!token) return showLogin();
+      currentStakeTier = stakeTiers.find(t => t.name === tierName);
+      if(!currentStakeTier) return;
+      document.getElementById('stake-modal').style.display = 'flex';
+      document.getElementById('stk-tier').textContent = currentStakeTier.name;
+      document.getElementById('stk-rate').textContent = (currentStakeTier.dailyRate*100).toFixed(1)+'%';
+      document.getElementById('stk-lock').textContent = currentStakeTier.lockDays+'天';
+      document.getElementById('stk-amount').value = currentStakeTier.min;
+      document.getElementById('stk-trade-pwd').value = '';
+      document.getElementById('stk-balance').textContent = userInfo ? userInfo.available_balance.toFixed(2) : '0';
+      document.getElementById('stk-error').textContent = '';
+    }
+    function closeStakeModal(){ document.getElementById('stake-modal').style.display = 'none'; }
+
+    document.getElementById('stk-confirm').addEventListener('click', () => {
+      const amount = parseFloat(document.getElementById('stk-amount').value);
+      const tradePassword = document.getElementById('stk-trade-pwd').value;
+      if(!amount || amount < currentStakeTier.min) return document.getElementById('stk-error').textContent = '金额不能低于最低门槛';
+      fetch(API+'/api/stake/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ tierName: currentStakeTier.name, amount, tradePassword })
+      })
+      .then(r => r.json())
+      .then(res => {
+        if(res.success){
+          alert('质押成功！到期日：'+res.data.endDate);
+          closeStakeModal();
+          checkLogin();
+          loadStakePage();
+        } else {
+          document.getElementById('stk-error').textContent = res.message;
+        }
+      });
+    });
+
+    function renderMyStakesWithSign(data){
+      const { currentPeriod, stakes } = data;
+      const container = document.getElementById('my-stakes');
+      const statusDiv = document.getElementById('sign-status');
+      if (currentPeriod) {
+        const periodText = currentPeriod === 'morning' ? '上午签到时段 (12:00-13:00)' : '下午签到时段 (20:00-21:00)';
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = `⏰ ${periodText} 开放中`;
+      } else if (stakes.length > 0) {
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = '🔒 当前非签到时段（12:00-13:00 或 20:00-21:00）';
+      } else {
+        statusDiv.style.display = 'none';
+      }
+      if(stakes.length === 0){ container.innerHTML = '<div class="card sm-text">暂无质押记录</div>'; return; }
+      container.innerHTML = '<h3 style="margin-top:16px;">📋 我的质押 & 签到</h3>' + stakes.map(s => {
+        const morningDone = s.morning_signed;
+        const afternoonDone = s.afternoon_signed;
+        const morningStatus = morningDone ? '✅' : (currentPeriod === 'morning' ? '⏳' : ((currentPeriod === 'afternoon' || currentPeriod === null) && !morningDone ? '❌' : '—'));
+        const afternoonStatus = afternoonDone ? '✅' : (currentPeriod === 'afternoon' ? '⏳' : ((currentPeriod === 'morning' || currentPeriod === null) && !afternoonDone ? '❌' : '—'));
+        let signBtnHTML = '';
+        if (currentPeriod === 'morning') {
+          if (!morningDone) signBtnHTML = `<button class="btn" style="background:#22c55e;margin-top:8px;padding:8px 16px;font-size:14px;" onclick="doSign(this, ${s.id}, 'morning')">💰 签到领收益（上午）</button>`;
+          else signBtnHTML = `<button class="btn-disabled" style="margin-top:8px;padding:8px 16px;font-size:14px;" disabled>已签到（上午）</button>`;
+        } else if (currentPeriod === 'afternoon') {
+          if (!afternoonDone) signBtnHTML = `<button class="btn" style="background:#22c55e;margin-top:8px;padding:8px 16px;font-size:14px;" onclick="doSign(this, ${s.id}, 'afternoon')">💰 签到领收益（下午）</button>`;
+          else signBtnHTML = `<button class="btn-disabled" style="margin-top:8px;padding:8px 16px;font-size:14px;" disabled>已签到（下午）</button>`;
+        } else {
+          if (morningDone && afternoonDone) signBtnHTML = `<button class="btn-disabled" style="margin-top:8px;padding:8px 16px;font-size:14px;" disabled>今日全部已签到</button>`;
+          else signBtnHTML = `<button class="btn-disabled" style="margin-top:8px;padding:8px 16px;font-size:14px;" disabled>未到签到时段</button>`;
+        }
+        return `
+          <div class="card">
+            <div class="flex-between"><span style="font-weight:bold;">${s.tier}</span><span class="gold">${(s.daily_rate*100).toFixed(1)}% / 天</span></div>
+            <div class="flex-between sm-text" style="margin-top:8px;"><span>质押金额: ${s.amount} USDT</span><span>今日收益: ${s.daily_earnings.toFixed(2)} USDT</span></div>
+            <div class="flex-between sm-text" style="margin-top:4px;"><span>上午: ${morningStatus}</span><span>下午: ${afternoonStatus}</span></div>
+            ${signBtnHTML}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function doSign(btnElement, stakeId, period) {
+      if(!token) return;
+      fetch(API+'/api/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ stakeId })
+      })
+      .then(r => r.json())
+      .then(res => {
+        if(res.success){
+          playCoinAnimation(btnElement, () => {
+            alert(`签到成功！获得 ${res.data.earnings} USDT`);
+            checkLogin();
+            loadStakePage();
+          });
+        } else { alert(res.message); }
+      });
+    }
+
+    function playCoinAnimation(startElement, callback) {
+      const coinContainer = document.getElementById('coin-animation');
+      coinContainer.style.display = 'block';
+      const startRect = startElement.getBoundingClientRect();
+      const myTab = document.querySelector('.tab-item[data-page="page-me"]');
+      const endRect = myTab.getBoundingClientRect();
+      for (let i = 0; i < 12; i++) {
+        setTimeout(() => {
+          const coin = document.createElement('div');
+          coin.textContent = '🪙';
+          coin.style.cssText = `position:fixed; left:${startRect.left + startRect.width/2 - 15}px; top:${startRect.top}px; font-size:24px; transition: all 0.8s cubic-bezier(0.25,0.1,0.25,1); z-index:301;`;
+          coinContainer.appendChild(coin);
+          requestAnimationFrame(() => {
+            coin.style.left = `${endRect.left + endRect.width/2 - 15}px`;
+            coin.style.top = `${endRect.top}px`;
+            coin.style.opacity = '0';
+          });
+          setTimeout(() => coin.remove(), 900);
+        }, i * 50);
+      }
+      setTimeout(() => { coinContainer.style.display = 'none'; if(callback) callback(); }, 1200);
+    }
+
+    // ==================== 设置 ====================
+    function showSettings(){
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;display:flex;align-items:center;justify-content:center;';
+      modal.innerHTML = `
+        <div style="background:#111827;border-radius:16px;padding:20px;width:90%;max-width:400px;">
+          <h2 style="color:#fbbf24;margin-bottom:12px;">⚙️ 设置</h2>
+          <div class="card" onclick="changeNickname()" style="cursor:pointer;"><div class="flex-between"><span>✏️ 修改昵称</span><span>${userInfo.nickname || '未设置'}</span></div></div>
+          <div class="card" style="cursor:pointer;">
+            <div class="flex-between"><span>🖼️ 修改头像</span><span style="color:#6b7280;">›</span></div>
+            <div style="margin-top:8px;display:flex;gap:8px;">
+              <button class="btn btn-sm" onclick="event.stopPropagation();document.getElementById('avatar-file-input').click()">📁 上传图片</button>
+              <button class="btn btn-sm" onclick="event.stopPropagation();changeAvatarEmoji()">🎯 选表情</button>
+            </div>
+            <input type="file" id="avatar-file-input" accept="image/*" style="display:none;" onchange="uploadAvatar(this.files[0])">
+          </div>
+          <div class="card" onclick="setTradePassword()" style="cursor:pointer;"><div class="flex-between"><span>🔒 交易密码</span><span>${userInfo.hasTradePwd ? '已设置' : '未设置'}</span></div></div>
+          <div class="card" onclick="bindAddress()" style="cursor:pointer;"><div class="flex-between"><span>🏦 提款地址</span><span>${userInfo.hasAddress ? '已绑定' : '未绑定'}</span></div></div>
+          <div class="card" onclick="realNameVerify()" style="cursor:pointer;"><div class="flex-between"><span>🪪 实名认证</span><span>${userSettings && userSettings.real_status !== 'unverified' ? '已提交' : '未认证'}</span></div></div>
+          <button class="btn" style="background:#1f2937;color:#ef4444;border:1px solid #374151;margin-top:12px;" onclick="logout();document.body.removeChild(this.parentElement.parentElement)">退出登录</button>
+          <button class="btn" style="background:transparent;border:1px solid #374151;color:#fff;margin-top:8px;" onclick="document.body.removeChild(this.parentElement.parentElement)">关闭</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', function(e){ if(e.target === modal) document.body.removeChild(modal); });
+    }
+
+    function changeNickname(){
+      const newName = prompt('请输入新昵称:', userInfo.nickname || '');
+      if(newName === null || newName.trim() === '') return;
+      fetch(API+'/api/user/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ nickname: newName.trim() })
+      })
+      .then(r => r.json())
+      .then(res => {
+        alert(res.message);
+        if(res.success){ userInfo = res.data; renderUserPanel(); closeAllModals(); setTimeout(() => showSettings(), 100); }
+      });
+    }
+
+    function uploadAvatar(file) {
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { alert('图片不能超过5MB'); return; }
+      const formData = new FormData();
+      formData.append('avatar', file);
+      fetch(API + '/api/user/upload-avatar', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: formData
+      })
+      .then(r => r.json())
+      .then(res => {
+        alert(res.message);
+        if (res.success) { userInfo.avatar = res.data.avatar; renderUserPanel(); closeAllModals(); setTimeout(() => showSettings(), 100); }
+      });
+    }
+
+    function changeAvatarEmoji() {
+      const avatars = ['🦊', '🦁', '🐯', '🐻', '🐼', '🐨', '🐰', '🐸', '🐵', '🦄', '🐲', '🐶', '🐱', '🐭', '🐹', '🐮', '🦝', '🐗', '🦌', '🐺', '🦅', '🐧'];
+      const selected = prompt('选择一个动物头像 (输入对应数字):\n' + avatars.map((a,i) => `${i+1}. ${a}`).join(' '));
+      if (selected === null) return;
+      const index = parseInt(selected) - 1;
+      if (isNaN(index) || index < 0 || index >= avatars.length) { alert('无效选择'); return; }
+      fetch(API + '/api/user/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ avatar: avatars[index] })
+      })
+      .then(r => r.json())
+      .then(res => {
+        alert(res.message);
+        if (res.success) { userInfo = res.data; renderUserPanel(); closeAllModals(); setTimeout(() => showSettings(), 100); }
+      });
+    }
+
+    function setTradePassword(){
+      if(userInfo.hasTradePwd) { alert('交易密码已设置，如需修改请联系在线客服'); return; }
+      const pwd = prompt('请设置6位数字交易密码:');
+      if(!pwd || pwd.length !== 6 || isNaN(pwd)) return alert('密码必须为6位数字');
+      fetch(API+'/api/user/trade-password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ password: pwd })
+      })
+      .then(r => r.json())
+      .then(res => { alert(res.message); if(res.success) checkLogin(); });
+    }
+
+    function bindAddress(){
+      fetch(API+'/api/withdraw/addresses', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => {
+          if(res.success && res.data.length > 0){
+            alert('您已绑定提款地址，如需修改请联系客服');
+          } else {
+            const coin = prompt('币种 (如 USDT):');
+            if(!coin) return;
+            const address = prompt('提款地址:');
+            if(!address) return;
+            const label = prompt('备注 (可选):') || '';
+            fetch(API+'/api/withdraw/addresses', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+              body: JSON.stringify({ coin, address, label })
+            })
+            .then(r => r.json())
+            .then(res => { alert(res.message); });
+          }
+        });
+    }
+
+    function realNameVerify(){
+      if(userSettings && userSettings.real_status !== 'unverified') { alert('实名信息已提交，等待审核'); return; }
+      const realName = prompt('真实姓名:');
+      if(!realName) return;
+      const idCard = prompt('身份证号:');
+      if(!idCard) return;
+      fetch(API+'/api/user/real-verify', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ realName, idCard })
+      })
+      .then(r => r.json())
+      .then(res => { alert(res.message); checkLogin(); });
+    }
+
+    function closeAllModals(){
+      document.querySelectorAll('div[style*="rgba(0,0,0,0.8)"]').forEach(m => m.remove());
+    }
+
+    // ==================== 其他页面 ====================
+    function loadMyLevel(){
+      if(!token) return switchPage('page-me');
+      fetch(API+'/api/user/level', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => {
+          if(!res.success) return alert(res.message);
+          const d = res.data;
+          const requirements = [
+            { name: '一星·共建会员', cond: '直推≥3人, 团队质押≥5,000 USDT' },
+            { name: '二星·同行会员', cond: '直推≥6人, 团队质押≥50,000 USDT, 旗下≥1个一星' },
+            { name: '三星·领航会员', cond: '直推≥10人, 团队质押≥150,000 USDT, 旗下≥2个二星' },
+            { name: '四星·生态长老', cond: '直推≥15人, 团队质押≥600,000 USDT, 旗下≥3个三星' },
+            { name: '五星·荣誉董事', cond: '直推≥20人, 团队质押≥2,000,000 USDT, 旗下≥3个四星' }
+          ];
+          document.getElementById('level-content').innerHTML = `
+            <div style="text-align:center;margin-bottom:16px;"><div style="font-size:40px;">🏅</div><div style="font-size:20px;font-weight:bold;color:#fbbf24;">${d.levelName}</div></div>
+            <div class="flex-between sm-text"><span>直推人数</span><span>${d.directCount} 人</span></div>
+            <div class="flex-between sm-text" style="margin-top:8px;"><span>团队总质押</span><span class="gold">${d.teamStake} USDT</span></div>
+            <h3 style="margin-top:20px;">📋 升级条件</h3>
+            ${requirements.map(r => `<div class="card sm-text"><span class="gold">${r.name}</span><br>${r.cond}</div>`).join('')}
+          `;
+        });
+    }
+
+    function loadMyTeam(){
+      if(!token) return switchPage('page-me');
+      fetch(API+'/api/team/direct', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => {
+          if(!res.success) return alert(res.message);
+          const list = res.data;
+          if(list.length === 0){ document.getElementById('team-content').innerHTML = '<p>暂无直推好友</p>'; return; }
+          document.getElementById('team-content').innerHTML = list.map(u => `
+            <div class="card"><div class="flex-between"><span style="font-weight:bold;">${u.nickname || u.username}</span><span class="badge">${u.level || '普通用户'}</span></div><div class="flex-between sm-text" style="margin-top:8px;"><span>质押总额</span><span class="gold">${u.total_staked} USDT</span></div></div>
+          `).join('');
+        });
+    }
+
+    function loadActivities(){
+      fetch(API + '/api/welfares', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.json())
+        .then(res => {
+          const list = res.data || [];
+          const container = document.getElementById('activities-list');
+          if(list.length === 0){ container.innerHTML = '<div class="card" style="text-align:center;">暂无活动</div>'; return; }
+          container.innerHTML = list.map(w => `
+            <div class="card"><div class="flex-between"><span style="font-weight:bold;">${w.title}</span><span class="gold">${w.reward_amount > 0 ? w.reward_amount + ' USDT' : '参与活动'}</span></div><button class="btn btn-sm" onclick="showWelfareDetail(${w.id})" style="margin-top:8px;">📋 活动详情</button></div>
+          `).join('');
+        });
+    }
+
+    function showWelfareDetail(id){
+      fetch(API + '/api/welfares', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.json())
+        .then(res => {
+          const w = (res.data || []).find(x => x.id === id);
+          if(!w) return;
+          currentWelfareId = id;
+          document.getElementById('welfare-detail-title').textContent = w.title;
+          document.getElementById('welfare-detail-desc').textContent = w.description || '暂无详情';
+          document.getElementById('welfare-detail-reward').textContent = w.reward_amount > 0 ? `奖励：${w.reward_amount} USDT` : '';
+          const claimBtn = document.getElementById('welfare-claim-btn');
+          if(w.claimed){ claimBtn.disabled = true; claimBtn.textContent = '已领取'; claimBtn.style.background = '#4b5563'; }
+          else { claimBtn.disabled = false; claimBtn.textContent = '领取奖励'; claimBtn.style.background = ''; }
+          document.getElementById('welfare-detail-modal').style.display = 'flex';
+        });
+    }
+    function closeWelfareDetail(){ document.getElementById('welfare-detail-modal').style.display = 'none'; }
+    function claimWelfare(){
+      if(!currentWelfareId) return;
+      fetch(API + '/api/welfares/' + currentWelfareId + '/claim', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.json())
+        .then(res => { alert(res.message); if(res.success) { closeWelfareDetail(); checkLogin(); loadActivities(); } });
+    }
+
+    function loadMyTrades(){
+      if(!token) return switchPage('page-me');
+      fetch(API+'/api/transactions/trades', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => {
+          const list = res.data || [];
+          const container = document.getElementById('trades-list');
+          if(list.length === 0){ container.innerHTML = '<div class="card" style="text-align:center;">暂无交易记录</div>'; return; }
+          const typeMap = { stake: '🔒 质押', earnings: '💰 收益' };
+          container.innerHTML = list.map(tx => `
+            <div class="card"><div class="flex-between"><span>${typeMap[tx.type] || tx.type}</span><span style="color:${tx.amount >= 0 ? '#22c55e' : '#ef4444'}">${tx.amount >= 0 ? '+' : ''}${tx.amount} USDT</span></div><div class="sm-text" style="margin-top:4px;">${tx.note || ''}</div><div class="sm-text">${tx.created_at}</div></div>
+          `).join('');
+        });
+    }
+
+    function loadMyBills(){
+      if(!token) return switchPage('page-me');
+      fetch(API+'/api/transactions/bills', { headers: { 'Authorization': 'Bearer '+token } })
+        .then(r => r.json())
+        .then(res => {
+          const list = res.data || [];
+          const container = document.getElementById('bills-list');
+          if(list.length === 0){ container.innerHTML = '<div class="card" style="text-align:center;">暂无账变记录</div>'; return; }
+          const typeMap = { recharge: '📥 充值', withdraw: '📤 提现', stake: '🔒 质押', earnings: '💰 收益', welfare: '🎁 活动奖励' };
+          container.innerHTML = list.map(tx => `
+            <div class="card"><div class="flex-between"><span>${typeMap[tx.type] || tx.type}</span><span style="color:${tx.amount >= 0 ? '#22c55e' : '#ef4444'}">${tx.amount >= 0 ? '+' : ''}${tx.amount} USDT</span></div><div class="sm-text" style="margin-top:4px;">${tx.note || ''}</div><div class="sm-text">${tx.created_at}</div></div>
+          `).join('');
+        });
+    }
+
+    // ==================== 行情 WebSocket ====================
+    let marketSocket = null;
+    function connectMarketWS() {
+      if (marketSocket && marketSocket.readyState === WebSocket.OPEN) return;
+      marketSocket = new WebSocket('ws://localhost:3000');
+      marketSocket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'market') renderMarketData(msg.data);
+      };
+      marketSocket.onclose = () => setTimeout(connectMarketWS, 3000);
+    }
+    function renderMarketData(data) {
+      const container = document.getElementById('market-table');
+      if (!container) return;
+      let html = '<table style="width:100%;border-collapse:collapse;"><thead><tr><th style="padding:10px;text-align:left;border-bottom:1px solid #1f2937;">币种</th><th style="padding:10px;text-align:right;border-bottom:1px solid #1f2937;">价格 (USD)</th><th style="padding:10px;text-align:right;border-bottom:1px solid #1f2937;">24h涨跌</th></tr></thead><tbody>';
+      data.forEach(coin => {
+        const changeColor = coin.change >= 0 ? '#22c55e' : '#ef4444';
+        html += `<tr><td style="padding:10px;border-bottom:1px solid #1f2937;font-weight:bold;">${coin.name}</td><td style="padding:10px;text-align:right;border-bottom:1px solid #1f2937;">$${coin.price.toFixed(2)}</td><td style="padding:10px;text-align:right;border-bottom:1px solid #1f2937;color:${changeColor};">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</td></tr>`;
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+    connectMarketWS();
+
+    if(token) checkLogin();
+  </script>
+</body>
+</html>
