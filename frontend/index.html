@@ -147,7 +147,7 @@
     let token = localStorage.getItem('token') || '';
     let userInfo = null;
     let userSettings = null;
-    const API = 'http://localhost:3000';
+    const API = 'https://starocean.onrender.com';
     let homeCache = { announcements: null };
     let stakeTiers = [];
     let currentStakeTier = null;
@@ -279,7 +279,7 @@
       panel.innerHTML = `
         <div class="card" style="text-align:center;padding:20px 16px;">
           <div style="margin-bottom:8px;">
-            ${userInfo.avatar && userInfo.avatar.startsWith('/uploads') ? `<img src="http://localhost:3000${userInfo.avatar}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #fbbf24;">` : `<span style="font-size:48px;">${userInfo.avatar || '🦊'}</span>`}
+            ${userInfo.avatar && userInfo.avatar.startsWith('/uploads') ? `<img src="https://starocean.onrender.com${userInfo.avatar}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #fbbf24;">` : `<span style="font-size:48px;">${userInfo.avatar || '🦊'}</span>`}
           </div>
           <div style="font-size:18px;font-weight:bold;">${userInfo.nickname || userInfo.username}</div>
           <div class="sm-text">ID: ${userInfo.invite_code}</div>
@@ -718,7 +718,7 @@
     let marketSocket = null;
     function connectMarketWS() {
       if (marketSocket && marketSocket.readyState === WebSocket.OPEN) return;
-      marketSocket = new WebSocket('ws://localhost:3000');
+      marketSocket = new WebSocket('wss://starocean.onrender.com');
       marketSocket.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'market') renderMarketData(msg.data);
