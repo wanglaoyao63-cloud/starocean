@@ -128,7 +128,10 @@
     let editingWelfareId = null;
 
     if(adminToken) loadAdminPanel();
-
+function closeChangePwdModal(){
+  const modal = document.querySelector('div[style*="rgba(0,0,0,0.8)"]');
+  if(modal) modal.remove();
+}
     // 登录
     function adminLogin(){
       const username = document.getElementById('admin-username').value.trim();
@@ -353,7 +356,7 @@ function showChangePassword(){
       <input type="password" id="old-pwd" placeholder="旧密码">
       <input type="password" id="new-pwd" placeholder="新密码（至少6位）">
       <button class="btn" onclick="submitChangePwd()">确认修改</button>
-      <button class="btn" style="background:#374151;color:#fff;margin-top:8px;" onclick="this.parentElement.parentElement.parentElement.remove()">取消</button>
+      <button class="btn" style="background:#374151;color:#fff;margin-top:8px;" onclick="closeChangePwdModal()">取消</button>
       <div id="pwd-error" class="error-msg"></div>
     </div>
   `;
@@ -365,16 +368,17 @@ function submitChangePwd(){
   const oldPwd = document.getElementById('old-pwd').value.trim();
   const newPwd = document.getElementById('new-pwd').value.trim();
   if(!oldPwd || !newPwd) return;
-  fetch(API+'/api/admin/change-password', {
+  fetch(API + '/api/admin/change-password', {
     method: 'PUT',
-    headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+adminToken},
+    headers: {'Content-Type':'application/json', 'Authorization':'Bearer ' + adminToken},
     body: JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd })
   })
   .then(r => r.json())
   .then(res => {
     if(res.success){
       alert(res.message);
-      adminLogout(); // 修改成功后强制退出，用新密码重新登录
+      // 修改成功后强制退出，用新密码登录
+      adminLogout();
     } else {
       document.getElementById('pwd-error').textContent = res.message;
     }
