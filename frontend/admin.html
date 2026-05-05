@@ -365,51 +365,82 @@
       .then(res => { alert(res.message); closeModal('modal-admin'); loadAdmins(); });
     }
 
-    // ========== 修改密码 ==========
     function showChangePassword(){
-      const modal = document.createElement('div');
-      modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;display:flex;align-items:center;justify-content:center;';
-      modal.innerHTML = `
-        <div style="background:#111827;border-radius:16px;padding:20px;width:90%;max-width:400px;">
-          <h2 style="color:#fbbf24;margin-bottom:12px;">🔒 修改管理员密码</h2>
-          <input type="password" id="old-pwd" placeholder="旧密码">
-          <input type="password" id="new-pwd" placeholder="新密码（至少6位）">
-          <button class="btn" id="submit-pwd-btn">确认修改</button>
-          <button class="btn" style="background:#374151;color:#fff;margin-top:8px;" id="cancel-pwd-btn">取消</button>
-          <div id="pwd-error" class="error-msg"></div>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      
-      document.getElementById('submit-pwd-btn').addEventListener('click', () => {
-        const oldPwd = document.getElementById('old-pwd').value.trim();
-        const newPwd = document.getElementById('new-pwd').value.trim();
-        if(!oldPwd || !newPwd) return;
-        fetch(API+'/api/admin/change-password', {
-          method: 'PUT',
-          headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+adminToken},
-          body: JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd })
-        })
-        .then(r => r.json())
-        .then(res => {
-          if(res.success){
-            alert(res.message);
-            modal.remove();
-            adminLogout();
-          } else {
-            document.getElementById('pwd-error').textContent = res.message;
-          }
-        });
-      });
+  // 移除可能已存在的旧弹窗
+  const oldModal = document.getElementById('change-pwd-modal');
+  if(oldModal) oldModal.remove();
 
-      document.getElementById('cancel-pwd-btn').addEventListener('click', () => {
-        modal.remove();
-      });
+  const modal = document.createElement('div');
+  modal.id = 'change-pwd-modal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#111827;border-radius:16px;padding:20px;width:90%;max-width:400px;">
+      <h2 style="color:#fbbf24;margin-bottom:12px;">🔒 修改管理员密码</h2>
+      <input type="password" id="old-pwd" placeholder="旧密码">
+      <input type="password" id="new-pwd" placeholder="新密码（至少6位）">
+      <input type="password" id="new-pwd-confirm" placeholder="再次输入新密码">
+      <input type="text" id="google-code" placeholder="谷歌验证码（如已绑定）" maxlength="6">
+      <button class="btn" id="submit-pwd-btn">确认修改</button>
+      <button class="btn" style="background:#374151;color:#fff;margin-top:8px;" id="cancel-pwd-btn">取消</button>
+      <div id="pwd-error" class="error-msg"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
 
-      modal.addEventListener('click', function(e){
-        if(e.target === modal) modal.remove();
-      });
+  // 按钮事件绑定
+  document.getElementById('submit-pwd-btn').addEventListener('click', () => {
+    const oldPwd = document.getElementById('old-pwd').value.trim();
+    const newPwd = document.getElementById('new-pwd').value.trim();
+    const newPwdConfirm = document.getElementById('new-pwd-confirm').value.trim();
+    const googleCode = document.getElementById('google-code').value.trim();
+
+    if(!oldPwd || !newPwd || !newPwdConfirm){
+      document.getElementById('pwd-error').textContent = '请填写所有密码字段';
+      return;
     }
+    if(newPwd !== newPwdConfirm){
+      document.getElementById('pwd-error').textContent = '两次新密码不一致';
+      return;
+    }
+    if(newPwd.length < 6){
+      document.getElementById('pwd-error').textContent = '新密码至少6位';
+      return;
+    }
+
+    fetch(API + '/api/admin/change-password', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json', 'Authorization':'Bearer ' + adminToken},
+      body: JSON.stringify({
+        oldPassword: oldPwd,
+        newPassword: newPwd,
+        newPasswordConfirm: newPwdConfirm,
+        googleCode: googleCode || ''
+      })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if(res.success){
+        alert(res.message);
+        modal.remove();
+        adminLogout(); // 强制退出，用新密码登录
+      } else {
+        document.getElementById('pwd-error').textContent = res.message;
+      }
+    })
+    .catch(() => {
+      document.getElementById('pwd-error').textContent = '网络错误，请重试';
+    });
+  });
+
+  document.getElementById('cancel-pwd-btn').addEventListener('click', () => {
+    modal.remove();
+  });
+
+  // 点击遮罩关闭
+  modal.addEventListener('click', function(e){
+    if(e.target === modal) modal.remove();
+  });
+}
   </script>
 </body>
 </html>
