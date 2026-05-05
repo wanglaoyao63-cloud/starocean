@@ -43,7 +43,7 @@ app.use(cors());
 app.use(express.json());
 
 // 数据库初始化，自动生成数据库文件 starocean.db
-const db = new Database('starocean.db');
+const db = new Database('/var/data/starocean.db');
 db.pragma('journal_mode = WAL');
 
 // 建所有核心表
